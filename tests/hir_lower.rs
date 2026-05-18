@@ -345,8 +345,8 @@ fn analyze_return_preserves_qualified_function_name() {
 
 /// `WITH apoc.coll.count(…) AS c` preserves the qualified name through the aggregate interning path.
 ///
-/// Unit: `analyze()` → `lower_with` aggregate arm → `FunctionId` interning
-/// Precondition: Namespaced function whose last segment is a known aggregate name.
+/// Unit: `lower()` with custom registry → `lower_with` aggregate arm → `FunctionId` interning
+/// Precondition: Qualified function registered as a custom aggregate via `LowerConfig`.
 /// Expectation: `arenas.functions.name_of(aggregate.function)` returns the full dotted name.
 #[test]
 fn analyze_with_aggregate_preserves_qualified_function_name() {
@@ -375,8 +375,8 @@ fn analyze_with_aggregate_preserves_qualified_function_name() {
 
 /// `RETURN apoc.coll.count(…) AS c` preserves the qualified name through the RETURN aggregate path.
 ///
-/// Unit: `analyze()` → `lower_return` aggregate arm → `FunctionId` interning
-/// Precondition: Namespaced function whose last segment is a known aggregate name, in RETURN.
+/// Unit: `lower()` with custom registry → `lower_return` aggregate arm → `FunctionId` interning
+/// Precondition: Qualified function registered as a custom aggregate via `LowerConfig`.
 /// Expectation: `arenas.functions.name_of(aggregate.function)` returns the full dotted name.
 #[test]
 fn analyze_return_aggregate_preserves_qualified_function_name() {
