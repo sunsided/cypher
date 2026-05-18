@@ -992,9 +992,9 @@ impl LoweringContext {
                         .entries
                         .iter()
                         .map(|(key, val)| {
-                            let k = self.arenas.property_keys.intern(&key.name.name, Id);
-                            let v = self.lower_expr(val);
-                            (k, v)
+                            let property_key = self.arenas.property_keys.intern(&key.name.name, Id);
+                            let expr_id = self.lower_expr(val);
+                            (property_key, expr_id)
                         })
                         .collect();
                     ExprKind::Map(entries)
