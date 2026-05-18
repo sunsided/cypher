@@ -23,7 +23,7 @@ fn find_match_operation(operations: &[Operation]) -> &MatchOp {
         .expect("expected a Match operation")
 }
 
-fn find_first_project_expression<'a>(hir: &'a decypher::hir::HirQuery) -> &'a ExprKind {
+fn find_first_project_expression(hir: &decypher::hir::HirQuery) -> &ExprKind {
     let project = hir.parts[0]
         .operations
         .iter()
