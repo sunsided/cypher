@@ -683,8 +683,12 @@ impl<'cfg> LoweringContext<'cfg> {
                 if self.has_aggregate(&pi.expression) {
                     let (func_id, args, distinct) = match &pi.expression {
                         Expression::FunctionCall(fc) => {
-                            let name = Self::qualified_function_name(fc);
-                            let fid = self.arenas.functions.intern(&name, Id);
+                            let key = Self::qualified_function_key(fc);
+                            let display = Self::qualified_function_name(fc);
+                            let fid = self
+                                .arenas
+                                .functions
+                                .intern_with_display(&key, &display, Id);
                             let a = fc.arguments.iter().map(|a| self.lower_expr(a)).collect();
                             (fid, a, fc.distinct)
                         }
@@ -843,8 +847,12 @@ impl<'cfg> LoweringContext<'cfg> {
                     if self.has_aggregate(&pi.expression) {
                         let (func_id, args, distinct) = match &pi.expression {
                             Expression::FunctionCall(fc) => {
-                                let name = Self::qualified_function_name(fc);
-                                let fid = self.arenas.functions.intern(&name, Id);
+                                let key = Self::qualified_function_key(fc);
+                                let display = Self::qualified_function_name(fc);
+                                let fid = self
+                                    .arenas
+                                    .functions
+                                    .intern_with_display(&key, &display, Id);
                                 let a = fc.arguments.iter().map(|a| self.lower_expr(a)).collect();
                                 (fid, a, fc.distinct)
                             }
@@ -959,14 +967,24 @@ impl<'cfg> LoweringContext<'cfg> {
     }
 
     fn lower_procedure_invocation(&mut self, proc: &ProcedureInvocation) -> CallProcedureOp {
-        let name = proc
+        let key = proc
             .name
             .name
             .iter()
-            .map(|s| s.name.clone())
+            .map(|s| s.name.as_str())
+            .collect::<Vec<_>>()
+            .join("\x00");
+        let display = proc
+            .name
+            .name
+            .iter()
+            .map(|s| s.name.as_str())
             .collect::<Vec<_>>()
             .join(".");
-        let procedure = self.arenas.functions.intern(&name, Id);
+        let procedure = self
+            .arenas
+            .functions
+            .intern_with_display(&key, &display, Id);
         let args = proc
             .name
             .arguments
@@ -1108,8 +1126,12 @@ impl<'cfg> LoweringContext<'cfg> {
                 }
             }
             Expression::FunctionCall(fc) => {
-                let name = Self::qualified_function_name(fc);
-                let func_id = self.arenas.functions.intern(&name, Id);
+                let key = Self::qualified_function_key(fc);
+                let display = Self::qualified_function_name(fc);
+                let func_id = self
+                    .arenas
+                    .functions
+                    .intern_with_display(&key, &display, Id);
                 let args = fc.arguments.iter().map(|a| self.lower_expr(a)).collect();
                 ExprKind::FunctionCall {
                     function: func_id,
@@ -1691,6 +1713,14 @@ impl<'cfg> LoweringContext<'cfg> {
             name.push_str(&segment.name);
         }
         name
+    }
+
+    fn qualified_function_key(fc: &FunctionInvocation) -> String {
+        fc.name
+            .iter()
+            .map(|s| s.name.as_str())
+            .collect::<Vec<_>>()
+            .join("\x00")
     }
 
     fn infer_alias_name(&self, expr: &Expression) -> String {
