@@ -434,6 +434,38 @@ fn function_call_chained_binary_argument_lowers_as_single_arg() {
 }
 
 #[test]
+fn function_call_mixed_precedence_argument_lowers_as_single_arg() {
+    // 1 + 2 * 3 must lower as Add(1, Mul(2, 3)), not a flat chain
+    let hir = analyze("RETURN round(1 + 2 * 3) AS r").unwrap();
+    let expr_kind = find_first_project_expression(&hir);
+
+    let args = match expr_kind {
+        ExprKind::FunctionCall { args, .. } => args,
+        other => panic!("expected FunctionCall, got {other:?}"),
+    };
+
+    assert_eq!(args.len(), 1, "expected exactly one function argument");
+
+    let (add_left, add_right) = match &hir.arenas.expressions.get(args[0]).kind {
+        ExprKind::Binary { op, left, right } => {
+            assert_eq!(*op, BinaryOp::Add);
+            (*left, *right)
+        }
+        other => panic!("expected top-level Add, got {other:?}"),
+    };
+
+    match &hir.arenas.expressions.get(add_left).kind {
+        ExprKind::Literal(_) => {}
+        other => panic!("expected literal 1 as left operand of Add, got {other:?}"),
+    }
+
+    match &hir.arenas.expressions.get(add_right).kind {
+        ExprKind::Binary { op, .. } => assert_eq!(*op, BinaryOp::Multiply),
+        other => panic!("expected Multiply as right operand of Add, got {other:?}"),
+    }
+}
+
+#[test]
 fn function_call_two_binary_arguments_each_lowers_as_one_arg() {
     let hir = analyze("RETURN round(3.0 * 4.0, 1 + 2) AS r").unwrap();
     let expr_kind = find_first_project_expression(&hir);
