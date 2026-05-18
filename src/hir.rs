@@ -35,6 +35,8 @@ pub mod lower;
 pub mod ops;
 pub mod pattern;
 pub use aggregate_registry::AggregateRegistry;
+pub mod config;
+pub use config::LowerConfig;
 
 pub use arena::{BindingId, ExprId, HirArenas, ScopeId};
 pub use binding::{Binding, BindingKind, Scope};
