@@ -351,3 +351,30 @@ fn analyze_with_aggregate_preserves_qualified_function_name() {
         Some("apoc.coll.count"),
     );
 }
+
+/// `RETURN apoc.coll.count(…) AS c` preserves the qualified name through the RETURN aggregate path.
+///
+/// Unit: `analyze()` → `lower_return` aggregate arm → `FunctionId` interning
+/// Precondition: Namespaced function whose last segment is a known aggregate name, in RETURN.
+/// Expectation: `arenas.functions.name_of(aggregate.function)` returns the full dotted name.
+#[test]
+fn analyze_return_aggregate_preserves_qualified_function_name() {
+    let hir = analyze("MATCH (n) RETURN apoc.coll.count(n.name) AS c").unwrap();
+
+    let function_id = hir.parts[0]
+        .operations
+        .iter()
+        .find_map(|op| {
+            if let Operation::Aggregate(AggregateOp { aggregates, .. }) = op {
+                aggregates.first().map(|a| a.function)
+            } else {
+                None
+            }
+        })
+        .expect("expected an Aggregate operation with at least one aggregate item");
+
+    assert_eq!(
+        hir.arenas.functions.name_of(function_id),
+        Some("apoc.coll.count"),
+    );
+}
