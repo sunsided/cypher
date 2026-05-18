@@ -432,3 +432,25 @@ fn function_call_chained_binary_argument_lowers_as_single_arg() {
         other => panic!("expected binary division argument, got {other:?}"),
     }
 }
+
+#[test]
+fn function_call_two_binary_arguments_each_lowers_as_one_arg() {
+    let hir = analyze("RETURN round(3.0 * 4.0, 1 + 2) AS r").unwrap();
+    let expr_kind = find_first_project_expression(&hir);
+
+    let args = match expr_kind {
+        ExprKind::FunctionCall { args, .. } => args,
+        other => panic!("expected FunctionCall, got {other:?}"),
+    };
+
+    assert_eq!(args.len(), 2, "expected exactly two function arguments");
+
+    match &hir.arenas.expressions.get(args[0]).kind {
+        ExprKind::Binary { op, .. } => assert_eq!(*op, BinaryOp::Multiply),
+        other => panic!("expected binary multiply for arg 0, got {other:?}"),
+    }
+    match &hir.arenas.expressions.get(args[1]).kind {
+        ExprKind::Binary { op, .. } => assert_eq!(*op, BinaryOp::Add),
+        other => panic!("expected binary add for arg 1, got {other:?}"),
+    }
+}
