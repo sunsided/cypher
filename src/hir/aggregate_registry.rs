@@ -1,5 +1,13 @@
 use std::collections::HashSet;
 
+/// Registry of aggregate function names for the Cypher HIR lowering pass.
+///
+/// Names are stored and matched using the dot-joined form (e.g.
+/// `"apoc.agg.percentiles"`). Backtick-escaped segments whose unescaped
+/// text contains a literal dot (e.g. `` `apoc.agg`.percentiles ``) are
+/// normalised to the same dot-joined form and will match the same registry
+/// entry. If your codebase uses such names as both aggregates and
+/// non-aggregates, the aggregate classification may produce false positives.
 pub struct AggregateRegistry {
     names: HashSet<String>,
 }

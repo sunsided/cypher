@@ -172,8 +172,22 @@ impl<T: Copy + Clone> Interner<T> {
         key: &str,
         display: &str,
         mk: impl FnOnce(usize) -> T,
-    ) -> T {
+    ) -> T
+    where
+        T: Into<usize>,
+    {
         if let Some(&id) = self.map.get(key) {
+            #[cfg(debug_assertions)]
+            {
+                let idx: usize = id.into();
+                if let Some(stored) = self.display.get(&idx) {
+                    debug_assert_eq!(
+                        stored.as_str(),
+                        display,
+                        "intern_with_display: same key \"{key}\" re-interned with different display"
+                    );
+                }
+            }
             return id;
         }
         let idx = self.next;
