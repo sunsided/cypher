@@ -6,6 +6,7 @@
 use decypher::analyze;
 use decypher::hir::{
     RelationshipDirection,
+    expr::{BinaryOp, ExprKind},
     ops::{MatchOp, Operation},
 };
 
@@ -20,6 +21,19 @@ fn find_match_operation(operations: &[Operation]) -> &MatchOp {
             }
         })
         .expect("expected a Match operation")
+}
+
+fn find_first_project_expression<'a>(hir: &'a decypher::hir::HirQuery) -> &'a ExprKind {
+    let project = hir.parts[0]
+        .operations
+        .iter()
+        .find_map(|op| match op {
+            Operation::Project(project) => Some(project),
+            _ => None,
+        })
+        .expect("expected a Project operation");
+    let expression_id = project.items[0].expression;
+    &hir.arenas.expressions.get(expression_id).kind
 }
 
 /// A basic `MATCH … RETURN` query lowers to exactly one query part.
@@ -149,4 +163,40 @@ fn chained_path_relationship_left_indices() {
     assert_eq!(rels[0].right, 1, "rel[0].right should be 1");
     assert_eq!(rels[1].left, 1, "rel[1].left should be 1, not 0");
     assert_eq!(rels[1].right, 2, "rel[1].right should be 2");
+}
+
+#[test]
+fn function_call_single_binary_argument_lowers_as_single_arg() {
+    let hir = analyze("RETURN round(1 + 2) AS r").unwrap();
+    let expr_kind = find_first_project_expression(&hir);
+
+    let args = match expr_kind {
+        ExprKind::FunctionCall { args, .. } => args,
+        other => panic!("expected FunctionCall, got {other:?}"),
+    };
+
+    assert_eq!(args.len(), 1, "expected exactly one function argument");
+    let arg_expr = &hir.arenas.expressions.get(args[0]).kind;
+    match arg_expr {
+        ExprKind::Binary { op, .. } => assert_eq!(*op, BinaryOp::Add),
+        other => panic!("expected binary addition argument, got {other:?}"),
+    }
+}
+
+#[test]
+fn function_call_chained_binary_argument_lowers_as_single_arg() {
+    let hir = analyze("RETURN round(3.0 * 4.0 / 5.0) AS r").unwrap();
+    let expr_kind = find_first_project_expression(&hir);
+
+    let args = match expr_kind {
+        ExprKind::FunctionCall { args, .. } => args,
+        other => panic!("expected FunctionCall, got {other:?}"),
+    };
+
+    assert_eq!(args.len(), 1, "expected exactly one function argument");
+    let arg_expr = &hir.arenas.expressions.get(args[0]).kind;
+    match arg_expr {
+        ExprKind::Binary { op, .. } => assert_eq!(*op, BinaryOp::Divide),
+        other => panic!("expected binary division argument, got {other:?}"),
+    }
 }
