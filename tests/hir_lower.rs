@@ -24,7 +24,8 @@ fn find_match_operation(operations: &[Operation]) -> &MatchOp {
 }
 
 fn find_first_project_expression(hir: &decypher::hir::HirQuery) -> &ExprKind {
-    let project = hir.parts[0]
+    let part = hir.parts.first().expect("expected at least one query part");
+    let project = part
         .operations
         .iter()
         .find_map(|op| match op {
@@ -32,7 +33,11 @@ fn find_first_project_expression(hir: &decypher::hir::HirQuery) -> &ExprKind {
             _ => None,
         })
         .expect("expected a Project operation");
-    let expression_id = project.items[0].expression;
+    let expression_id = project
+        .items
+        .first()
+        .expect("expected at least one projection item")
+        .expression;
     &hir.arenas.expressions.get(expression_id).kind
 }
 

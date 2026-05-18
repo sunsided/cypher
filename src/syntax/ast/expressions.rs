@@ -688,8 +688,10 @@ impl FunctionInvocation {
                     continue;
                 }
                 if let Some(expr) = Expression::cast(node.clone()) {
-                    // Flat CST may contain progressive intermediate expression
-                    // nodes; keep the latest one in each comma-delimited segment.
+                    // The flat CST can expose a binary chain as multiple sibling
+                    // expression nodes (e.g. `a`, then `a*b`, then `(a*b)/c`).
+                    // Keep the latest expression in each comma-delimited segment
+                    // so each argument is the final composed expression.
                     current = Some(expr);
                 }
             }
