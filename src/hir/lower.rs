@@ -15,8 +15,8 @@ use crate::ast::clause::{
     SetItem, SetOperator, Unwind, With,
 };
 use crate::ast::expr::{
-    BinaryOperator, ComparisonOperator, ExistsInner, Expression, Literal, MapProjectionItem,
-    NumberLiteral, UnaryOperator,
+    BinaryOperator, ComparisonOperator, ExistsInner, Expression, FunctionInvocation, Literal,
+    MapProjectionItem, NumberLiteral, UnaryOperator,
 };
 use crate::ast::names::Variable;
 use crate::ast::pattern::{
@@ -680,12 +680,7 @@ impl LoweringContext {
                 if self.has_aggregate(&pi.expression) {
                     let (func_id, args, distinct) = match &pi.expression {
                         Expression::FunctionCall(fc) => {
-                            let name = fc
-                                .name
-                                .iter()
-                                .map(|s| s.name.as_str())
-                                .collect::<Vec<_>>()
-                                .join(".");
+                            let name = Self::qualified_function_name(fc);
                             let fid = self.arenas.functions.intern(&name, Id);
                             let a = fc.arguments.iter().map(|a| self.lower_expr(a)).collect();
                             (fid, a, fc.distinct)
@@ -845,12 +840,7 @@ impl LoweringContext {
                     if self.has_aggregate(&pi.expression) {
                         let (func_id, args, distinct) = match &pi.expression {
                             Expression::FunctionCall(fc) => {
-                                let name = fc
-                                    .name
-                                    .iter()
-                                    .map(|s| s.name.as_str())
-                                    .collect::<Vec<_>>()
-                                    .join(".");
+                                let name = Self::qualified_function_name(fc);
                                 let fid = self.arenas.functions.intern(&name, Id);
                                 let a = fc.arguments.iter().map(|a| self.lower_expr(a)).collect();
                                 (fid, a, fc.distinct)
@@ -1097,12 +1087,7 @@ impl LoweringContext {
                 }
             }
             Expression::FunctionCall(fc) => {
-                let name = fc
-                    .name
-                    .iter()
-                    .map(|s| s.name.as_str())
-                    .collect::<Vec<_>>()
-                    .join(".");
+                let name = Self::qualified_function_name(fc);
                 let func_id = self.arenas.functions.intern(&name, Id);
                 let args = fc.arguments.iter().map(|a| self.lower_expr(a)).collect();
                 ExprKind::FunctionCall {
@@ -1679,6 +1664,17 @@ impl LoweringContext {
 
     fn resolve_or_create_binding(&mut self, var: &Variable) -> BindingId {
         self.resolve_or_bind_variable(var)
+    }
+
+    fn qualified_function_name(fc: &FunctionInvocation) -> String {
+        let mut name = String::new();
+        for (idx, segment) in fc.name.iter().enumerate() {
+            if idx > 0 {
+                name.push('.');
+            }
+            name.push_str(&segment.name);
+        }
+        name
     }
 
     fn infer_alias_name(&self, expr: &Expression) -> String {
