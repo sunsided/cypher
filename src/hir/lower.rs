@@ -1256,15 +1256,10 @@ impl LoweringContext {
             Literal::String(s) => HirLiteral::String(s.value.clone()),
             Literal::Boolean(b) => HirLiteral::Boolean(*b),
             Literal::Null => HirLiteral::Null,
-            Literal::List(l) => {
-                let _elements: Vec<ExprId> =
-                    l.elements.iter().map(|e| self.lower_expr(e)).collect();
-                // We represent list literals as ExprKind::List, but HirLiteral only has scalar kinds.
-                // Build it as a list expression instead.
-                HirLiteral::Null // placeholder - the caller should handle lists specially
-            }
-            Literal::Map(_m) => {
-                HirLiteral::Null // placeholder
+            Literal::List(_) | Literal::Map(_) => {
+                unreachable!(
+                    "list/map literals are intercepted in lower_expr before lower_literal is called"
+                )
             }
         }
     }
