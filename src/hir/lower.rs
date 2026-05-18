@@ -2000,4 +2000,35 @@ mod tests {
             &ops[1]
         );
     }
+
+    #[test]
+    fn test_escaped_segment_does_not_collide_with_dotted_namespace() {
+        // `apoc.text`.distance has 2 segments: ["apoc.text", "distance"]
+        // apoc.text.distance has 3 segments: ["apoc", "text", "distance"]
+        // They must produce distinct FunctionIds.
+        let query =
+            parse("RETURN `apoc.text`.distance('a', 'b'), apoc.text.distance('a', 'b')").unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
+        let ops = &hir.parts[0].operations;
+
+        let (escaped_id, plain_id) = match &ops[0] {
+            Operation::Project(ProjectOp { items, .. }) => {
+                let escaped = match &hir.arenas.expressions.get(items[0].expression).kind {
+                    ExprKind::FunctionCall { function, .. } => *function,
+                    _ => panic!("Expected FunctionCall for item 0"),
+                };
+                let plain = match &hir.arenas.expressions.get(items[1].expression).kind {
+                    ExprKind::FunctionCall { function, .. } => *function,
+                    _ => panic!("Expected FunctionCall for item 1"),
+                };
+                (escaped, plain)
+            }
+            _ => panic!("Expected ProjectOp"),
+        };
+
+        assert_ne!(
+            escaped_id, plain_id,
+            "`apoc.text`.distance and apoc.text.distance must have distinct FunctionIds"
+        );
+    }
 }
