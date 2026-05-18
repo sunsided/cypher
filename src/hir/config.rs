@@ -1,15 +1,8 @@
 use super::aggregate_registry::AggregateRegistry;
 
+#[derive(Default)]
 pub struct LowerConfig {
     pub aggregates: AggregateRegistry,
-}
-
-impl Default for LowerConfig {
-    fn default() -> Self {
-        Self {
-            aggregates: AggregateRegistry::default(),
-        }
-    }
 }
 
 #[cfg(test)]

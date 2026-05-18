@@ -351,3 +351,48 @@ where
             })
     })
 }
+
+/// Parse and lower a Cypher query with a custom [`hir::LowerConfig`].
+///
+/// Identical to [`analyze`] except the caller supplies a [`hir::LowerConfig`]
+/// to control lowering behaviour — for example, to register user-defined or
+/// plugin aggregate functions via [`hir::AggregateRegistry`].
+///
+/// # Errors
+///
+/// Returns the first error encountered during parsing or HIR lowering.
+///
+/// # Example
+///
+/// ```
+/// let mut config = decypher::hir::LowerConfig::default();
+/// config.aggregates.register("apoc.agg.percentiles");
+/// let hir = decypher::analyze_with_config(
+///     "MATCH (n) WITH apoc.agg.percentiles(n.score) AS p RETURN p",
+///     &config,
+/// )
+/// .unwrap();
+/// assert!(!hir.parts.is_empty());
+/// ```
+#[cfg(feature = "hir")]
+pub fn analyze_with_config<T>(input: T, config: &hir::LowerConfig) -> Result<hir::HirQuery>
+where
+    T: TryInto<Query>,
+    CypherError: From<T::Error>,
+{
+    let query = input.try_into().map_err(CypherError::from)?;
+    hir::lower::lower(&query, config).map_err(|diagnostics| {
+        diagnostics
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| CypherError {
+                kind: ErrorKind::Internal {
+                    message: "unknown HIR lowering error".into(),
+                },
+                span: Span::new(0, 0),
+                source_label: None,
+                notes: Vec::new(),
+                source: None,
+            })
+    })
+}
