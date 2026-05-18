@@ -5,8 +5,8 @@
 
 use decypher::analyze;
 use decypher::hir::{
-    RelationshipDirection,
-    ops::{MatchOp, Operation},
+    ExprKind, RelationshipDirection,
+    ops::{AggregateOp, MatchOp, Operation},
 };
 
 fn find_match_operation(operations: &[Operation]) -> &MatchOp {
@@ -149,4 +149,55 @@ fn chained_path_relationship_left_indices() {
     assert_eq!(rels[0].right, 1, "rel[0].right should be 1");
     assert_eq!(rels[1].left, 1, "rel[1].left should be 1, not 0");
     assert_eq!(rels[1].right, 2, "rel[1].right should be 2");
+}
+
+/// `RETURN apoc.text.distance(…)` preserves the full qualified name in the interned FunctionId.
+///
+/// Unit: `analyze()` → `lower_return` → `FunctionId` interning
+/// Precondition: Qualified function call with dotted namespace in RETURN.
+/// Expectation: `arenas.functions.name_of(id)` returns the full dotted name.
+#[test]
+fn analyze_return_preserves_qualified_function_name() {
+    let hir = analyze("RETURN apoc.text.distance('hello', 'world') AS d").unwrap();
+    let ops = &hir.parts[0].operations;
+
+    let function_id = match &ops[0] {
+        Operation::Project(op) => match &hir.arenas.expressions.get(op.items[0].expression).kind {
+            ExprKind::FunctionCall { function, .. } => *function,
+            _ => panic!("expected FunctionCall expression"),
+        },
+        _ => panic!("expected Project operation"),
+    };
+
+    assert_eq!(
+        hir.arenas.functions.name_of(function_id),
+        Some("apoc.text.distance"),
+    );
+}
+
+/// `WITH apoc.coll.count(…) AS c` preserves the qualified name through the aggregate interning path.
+///
+/// Unit: `analyze()` → `lower_with` aggregate arm → `FunctionId` interning
+/// Precondition: Namespaced function whose last segment is a known aggregate name.
+/// Expectation: `arenas.functions.name_of(aggregate.function)` returns the full dotted name.
+#[test]
+fn analyze_with_aggregate_preserves_qualified_function_name() {
+    let hir = analyze("MATCH (n) WITH apoc.coll.count(n.name) AS c RETURN c").unwrap();
+
+    let function_id = hir.parts[0]
+        .operations
+        .iter()
+        .find_map(|op| {
+            if let Operation::Aggregate(AggregateOp { aggregates, .. }) = op {
+                aggregates.first().map(|a| a.function)
+            } else {
+                None
+            }
+        })
+        .expect("expected an Aggregate operation with at least one aggregate item");
+
+    assert_eq!(
+        hir.arenas.functions.name_of(function_id),
+        Some("apoc.coll.count"),
+    );
 }
