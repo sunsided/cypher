@@ -1974,6 +1974,7 @@ mod tests {
         // aggregate registry. It must lower to ProjectOp, not AggregateOp.
         let query = parse("MATCH (n) WITH apoc.coll.count(n.name) AS c RETURN c").unwrap();
         let hir = lower(&query, &LowerConfig::default()).unwrap();
+        assert_eq!(hir.parts.len(), 2);
         let ops = &hir.parts[0].operations;
         assert!(
             matches!(&ops[1], Operation::Project(_)),
@@ -1991,6 +1992,7 @@ mod tests {
 
         let query = parse("MATCH (n) WITH apoc.agg.percentiles(n.value) AS p RETURN p").unwrap();
         let hir = lower(&query, &config).unwrap();
+        assert_eq!(hir.parts.len(), 2);
         let ops = &hir.parts[0].operations;
         assert!(
             matches!(&ops[1], Operation::Aggregate(_)),
