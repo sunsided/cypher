@@ -1967,4 +1967,35 @@ mod tests {
             Some("apoc.text.replace")
         );
     }
+
+    #[test]
+    fn test_namespaced_count_is_not_aggregate() {
+        // apoc.coll.count has "count" as its last segment but is NOT in the default
+        // aggregate registry. It must lower to ProjectOp, not AggregateOp.
+        let query = parse("MATCH (n) WITH apoc.coll.count(n.name) AS c RETURN c").unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
+        let ops = &hir.parts[0].operations;
+        assert!(
+            matches!(&ops[1], Operation::Project(_)),
+            "expected ProjectOp but got: {:?}",
+            &ops[1]
+        );
+    }
+
+    #[test]
+    fn test_custom_registered_aggregate() {
+        // A custom qualified aggregate registered in LowerConfig must be routed
+        // to AggregateOp, not ProjectOp.
+        let mut config = LowerConfig::default();
+        config.aggregates.register("apoc.agg.percentiles");
+
+        let query = parse("MATCH (n) WITH apoc.agg.percentiles(n.value) AS p RETURN p").unwrap();
+        let hir = lower(&query, &config).unwrap();
+        let ops = &hir.parts[0].operations;
+        assert!(
+            matches!(&ops[1], Operation::Aggregate(_)),
+            "expected AggregateOp but got: {:?}",
+            &ops[1]
+        );
+    }
 }
