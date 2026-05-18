@@ -1694,11 +1694,14 @@ impl LoweringContext {
         match expr {
             Expression::Variable(v) => v.name.name.clone(),
             Expression::PropertyLookup { property, .. } => property.name.name.clone(),
-            Expression::FunctionCall(fc) => fc
-                .name
-                .last()
-                .map(|s| s.name.clone())
-                .unwrap_or_else(|| "expr".to_string()),
+            Expression::FunctionCall(fc) => {
+                let name = Self::qualified_function_name(fc);
+                if name.is_empty() {
+                    "expr".to_string()
+                } else {
+                    name
+                }
+            }
             _ => "expr".to_string(),
         }
     }
@@ -1931,6 +1934,20 @@ mod tests {
             hir.arenas.functions.name_of(function),
             Some("apoc.text.distance")
         );
+    }
+
+    #[test]
+    fn test_infer_alias_name_uses_full_qualified_name() {
+        let query = parse("RETURN apoc.text.distance('hello', 'world')").unwrap();
+        let hir = lower(&query).unwrap();
+        let ops = &hir.parts[0].operations;
+
+        let alias_id = match &ops[0] {
+            Operation::Project(ProjectOp { items, .. }) => items[0].alias,
+            _ => panic!("Expected ProjectOp"),
+        };
+
+        assert_eq!(hir.arenas.bindings.get(alias_id).name, "apoc.text.distance");
     }
 
     #[test]
