@@ -336,7 +336,7 @@ where
     CypherError: From<T::Error>,
 {
     let query = input.try_into().map_err(CypherError::from)?;
-    hir::lower::lower(&query).map_err(|diagnostics| {
+    hir::lower::lower(&query, &hir::LowerConfig::default()).map_err(|diagnostics| {
         diagnostics
             .into_iter()
             .next()

@@ -32,6 +32,7 @@ use crate::error::{Diagnostics, Span};
 
 use super::arena::{BindingId, ExprId, Id, LabelId, PropertyKeyId, RelTypeId, ScopeId};
 use super::binding::{Binding, BindingKind, Scope};
+use super::config::LowerConfig;
 use super::expr::{
     BinaryOp, CaseAlternative as HirCaseAlternative, CaseExpr as HirCaseExpr, CollectSubquery,
     CollectionQuantifier, ComparisonOperator as HirComparisonOperator, CountSubquery,
@@ -62,8 +63,8 @@ use super::{HirArenas, HirDiagnostic, HirQuery, QueryPart};
 ///
 /// Returns [`crate::error::Diagnostics`] on scope resolution or pattern
 /// normalisation failures.
-pub fn lower(query: &Query) -> Result<HirQuery, Diagnostics> {
-    let mut ctx = LoweringContext::new();
+pub fn lower(query: &Query, config: &LowerConfig) -> Result<HirQuery, Diagnostics> {
+    let mut ctx = LoweringContext::new(config);
     let mut parts = Vec::new();
 
     for stmt in &query.statements {
@@ -95,11 +96,12 @@ pub fn lower(query: &Query) -> Result<HirQuery, Diagnostics> {
 /// Holds the growing [`HirArenas`], the list of emitted diagnostics, the
 /// scope stack, and the buffer of operations being built for the current
 /// query part.
-struct LoweringContext {
+struct LoweringContext<'cfg> {
     arenas: HirArenas,
     diagnostics: Vec<HirDiagnostic>,
     scope_stack: LoweringScopeStack,
     current_part_ops: Vec<Operation>,
+    config: &'cfg LowerConfig,
 }
 
 /// Tracks variable bindings in a stack of scope frames during lowering.
@@ -188,14 +190,15 @@ impl LoweringScopeStack {
     }
 }
 
-impl LoweringContext {
+impl<'cfg> LoweringContext<'cfg> {
     /// Create a fresh lowering context with empty arenas and scope stack.
-    fn new() -> Self {
+    fn new(config: &'cfg LowerConfig) -> Self {
         Self {
             arenas: HirArenas::new(),
             diagnostics: Vec::new(),
             scope_stack: LoweringScopeStack::new(),
             current_part_ops: Vec::new(),
+            config,
         }
     }
 
@@ -423,7 +426,7 @@ impl LoweringContext {
             statements: vec![QueryBody::Regular(c.query.clone())],
             span: Span::new(0, 0),
         };
-        let query = lower(&query_ast).unwrap_or_else(|_| HirQuery {
+        let query = lower(&query_ast, self.config).unwrap_or_else(|_| HirQuery {
             arenas: HirArenas::new(),
             parts: Vec::new(),
             diagnostics: Vec::new(),
@@ -1339,7 +1342,7 @@ impl LoweringContext {
                     statements: vec![QueryBody::Regular((**rq).clone())],
                     span: Span::new(0, 0),
                 };
-                let query = lower(&query_ast).unwrap_or_else(|_| HirQuery {
+                let query = lower(&query_ast, self.config).unwrap_or_else(|_| HirQuery {
                     arenas: HirArenas::new(),
                     parts: Vec::new(),
                     diagnostics: Vec::new(),
@@ -1364,7 +1367,7 @@ impl LoweringContext {
             statements: vec![QueryBody::Regular(query.clone())],
             span: Span::new(0, 0),
         };
-        let q = lower(&query_ast).unwrap_or_else(|_| HirQuery {
+        let q = lower(&query_ast, self.config).unwrap_or_else(|_| HirQuery {
             arenas: HirArenas::new(),
             parts: Vec::new(),
             diagnostics: Vec::new(),
@@ -1387,7 +1390,7 @@ impl LoweringContext {
             statements: vec![QueryBody::Regular(query.clone())],
             span: Span::new(0, 0),
         };
-        let q = lower(&query_ast).unwrap_or_else(|_| HirQuery {
+        let q = lower(&query_ast, self.config).unwrap_or_else(|_| HirQuery {
             arenas: HirArenas::new(),
             parts: Vec::new(),
             diagnostics: Vec::new(),
@@ -1709,26 +1712,8 @@ impl LoweringContext {
     fn has_aggregate(&self, expr: &Expression) -> bool {
         match expr {
             Expression::FunctionCall(fc) => {
-                let name = fc
-                    .name
-                    .last()
-                    .map(|s| s.name.to_uppercase())
-                    .unwrap_or_default();
-                matches!(
-                    name.as_str(),
-                    "COUNT"
-                        | "SUM"
-                        | "AVG"
-                        | "MIN"
-                        | "MAX"
-                        | "COLLECT"
-                        | "PERCENTILE_CONT"
-                        | "PERCENTILE_DISC"
-                        | "STDEV"
-                        | "STDEVP"
-                        | "VAR"
-                        | "VARP"
-                )
+                let name = Self::qualified_function_name(fc);
+                self.config.aggregates.contains(&name)
             }
             Expression::CountStar { .. } => true,
             Expression::BinaryOp { lhs, rhs, .. } => {
@@ -1799,12 +1784,13 @@ fn expr_span(expr: &Expression) -> Span {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hir::LowerConfig;
     use crate::parse;
 
     #[test]
     fn test_simple_match_return() {
         let query = parse("MATCH (p:Person) RETURN p.name").unwrap();
-        let hir = lower(&query).unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
         assert_eq!(hir.parts.len(), 1);
         let ops = &hir.parts[0].operations;
         assert!(matches!(&ops[0], Operation::Match(_)));
@@ -1815,7 +1801,7 @@ mod tests {
     #[test]
     fn test_with_aggregation() {
         let query = parse("MATCH (p:Person) WITH count(*) AS n RETURN n").unwrap();
-        let hir = lower(&query).unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
         // WITH creates a new query part, so we get 2 parts
         assert_eq!(hir.parts.len(), 2);
         let ops = &hir.parts[0].operations;
@@ -1826,21 +1812,21 @@ mod tests {
     #[test]
     fn test_multi_part_query() {
         let query = parse("MATCH (p:Person) WITH p MATCH (p)-[:KNOWS]->(f) RETURN f.name").unwrap();
-        let hir = lower(&query).unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
         assert_eq!(hir.parts.len(), 2);
     }
 
     #[test]
     fn test_unknown_variable_error() {
         let query = parse("MATCH (p:Person) RETURN x.name").unwrap();
-        let result = lower(&query);
+        let result = lower(&query, &LowerConfig::default());
         assert!(result.is_err());
     }
 
     #[test]
     fn test_where_after_match() {
         let query = parse("MATCH (p:Person) WHERE p.age > 18 RETURN p.name").unwrap();
-        let hir = lower(&query).unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
         let ops = &hir.parts[0].operations;
         match &ops[0] {
             Operation::Match(m) => {
@@ -1853,7 +1839,7 @@ mod tests {
     #[test]
     fn test_where_after_with() {
         let query = parse("MATCH (p:Person) WITH p WHERE p.age > 18 RETURN p.name").unwrap();
-        let hir = lower(&query).unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
         let ops = &hir.parts[0].operations;
         assert!(matches!(&ops[0], Operation::Match(_)));
         assert!(matches!(&ops[1], Operation::Project(_)));
@@ -1863,7 +1849,7 @@ mod tests {
     #[test]
     fn test_optional_match() {
         let query = parse("OPTIONAL MATCH (p:Person) RETURN p.name").unwrap();
-        let hir = lower(&query).unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
         let ops = &hir.parts[0].operations;
         assert!(matches!(&ops[0], Operation::OptionalMatch(_)));
     }
@@ -1871,7 +1857,7 @@ mod tests {
     #[test]
     fn test_create_clause() {
         let query = parse("CREATE (p:Person {name: 'Alice'})").unwrap();
-        let hir = lower(&query).unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
         let ops = &hir.parts[0].operations;
         assert!(matches!(&ops[0], Operation::Create(_)));
     }
@@ -1879,7 +1865,7 @@ mod tests {
     #[test]
     fn test_delete_clause() {
         let query = parse("MATCH (p:Person) DELETE p").unwrap();
-        let hir = lower(&query).unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
         let ops = &hir.parts[0].operations;
         assert!(matches!(&ops[0], Operation::Match(_)));
         assert!(matches!(&ops[1], Operation::Delete(_)));
@@ -1888,7 +1874,7 @@ mod tests {
     #[test]
     fn test_unwind_clause() {
         let query = parse("UNWIND [1, 2, 3] AS x RETURN x").unwrap();
-        let hir = lower(&query).unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
         let ops = &hir.parts[0].operations;
         assert!(matches!(&ops[0], Operation::Unwind(_)));
     }
@@ -1896,7 +1882,7 @@ mod tests {
     #[test]
     fn test_return_star() {
         let query = parse("MATCH (p:Person) RETURN *").unwrap();
-        let hir = lower(&query).unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
         let ops = &hir.parts[0].operations;
         assert!(matches!(&ops[0], Operation::Match(_)));
         assert!(matches!(&ops[1], Operation::Project(_)));
@@ -1905,7 +1891,7 @@ mod tests {
     #[test]
     fn test_order_by_and_limit() {
         let query = parse("MATCH (p:Person) RETURN p.name ORDER BY p.name ASC LIMIT 10").unwrap();
-        let hir = lower(&query).unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
         let ops = &hir.parts[0].operations;
         assert!(matches!(&ops[0], Operation::Match(_)));
         assert!(matches!(&ops[1], Operation::Project(_)));
@@ -1917,7 +1903,7 @@ mod tests {
     #[test]
     fn test_function_call_preserves_qualified_name() {
         let query = parse("RETURN apoc.text.distance('hello', 'world') AS d").unwrap();
-        let hir = lower(&query).unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
         let ops = &hir.parts[0].operations;
 
         let function = match &ops[0] {
@@ -1939,7 +1925,7 @@ mod tests {
     #[test]
     fn test_infer_alias_name_uses_full_qualified_name() {
         let query = parse("RETURN apoc.text.distance('hello', 'world')").unwrap();
-        let hir = lower(&query).unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
         let ops = &hir.parts[0].operations;
 
         let alias_id = match &ops[0] {
@@ -1956,7 +1942,7 @@ mod tests {
             "RETURN replace('hello', 'l', 'x') AS a, apoc.text.replace('hello', 'l', 'x') AS b",
         )
         .unwrap();
-        let hir = lower(&query).unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
         let ops = &hir.parts[0].operations;
 
         let (builtin, qualified) = match &ops[0] {
