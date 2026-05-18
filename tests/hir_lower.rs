@@ -5,7 +5,9 @@
 
 use decypher::analyze;
 use decypher::hir::{
-    RelationshipDirection,
+    ExprKind, RelationshipDirection,
+    expr::Literal as HirLiteral,
+    ops::ProjectOp,
     ops::{MatchOp, Operation},
 };
 
@@ -20,6 +22,32 @@ fn find_match_operation(operations: &[Operation]) -> &MatchOp {
             }
         })
         .expect("expected a Match operation")
+}
+
+fn find_project_operation(operations: &[Operation]) -> &ProjectOp {
+    operations
+        .iter()
+        .find_map(|op| {
+            if let Operation::Project(project) = op {
+                Some(project)
+            } else {
+                None
+            }
+        })
+        .expect("expected a Project operation")
+}
+
+fn assert_integer_literal(
+    hir: &decypher::hir::HirQuery,
+    expr_id: decypher::hir::ExprId,
+    value: i64,
+) {
+    let expr = hir.arenas.expressions.get(expr_id);
+    assert!(
+        matches!(expr.kind, ExprKind::Literal(HirLiteral::Integer(v)) if v == value),
+        "expected integer literal {value}, got {:?}",
+        expr.kind
+    );
 }
 
 /// A basic `MATCH … RETURN` query lowers to exactly one query part.
@@ -149,4 +177,47 @@ fn chained_path_relationship_left_indices() {
     assert_eq!(rels[0].right, 1, "rel[0].right should be 1");
     assert_eq!(rels[1].left, 1, "rel[1].left should be 1, not 0");
     assert_eq!(rels[1].right, 2, "rel[1].right should be 2");
+}
+
+#[test]
+fn analyze_function_call_list_literal_argument() {
+    let hir = analyze("RETURN size([1, 2, 3]) AS len").unwrap();
+    let project = find_project_operation(&hir.parts[0].operations);
+
+    let call_expr = hir.arenas.expressions.get(project.items[0].expression);
+    let list_arg = match &call_expr.kind {
+        ExprKind::FunctionCall { args, .. } => {
+            assert_eq!(args.len(), 1, "expected a single function argument");
+            args[0]
+        }
+        other => panic!("expected function call expression, got {other:?}"),
+    };
+
+    let list_expr = hir.arenas.expressions.get(list_arg);
+    match &list_expr.kind {
+        ExprKind::List(elements) => {
+            assert_eq!(elements.len(), 3);
+            assert_integer_literal(&hir, elements[0], 1);
+            assert_integer_literal(&hir, elements[1], 2);
+            assert_integer_literal(&hir, elements[2], 3);
+        }
+        other => panic!("expected list literal argument, got {other:?}"),
+    }
+}
+
+#[test]
+fn analyze_standalone_list_literal() {
+    let hir = analyze("RETURN [1, 2, 3] AS lst").unwrap();
+    let project = find_project_operation(&hir.parts[0].operations);
+
+    let list_expr = hir.arenas.expressions.get(project.items[0].expression);
+    match &list_expr.kind {
+        ExprKind::List(elements) => {
+            assert_eq!(elements.len(), 3);
+            assert_integer_literal(&hir, elements[0], 1);
+            assert_integer_literal(&hir, elements[1], 2);
+            assert_integer_literal(&hir, elements[2], 3);
+        }
+        other => panic!("expected list literal expression, got {other:?}"),
+    }
 }

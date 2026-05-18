@@ -982,7 +982,25 @@ impl LoweringContext {
 
     fn lower_expr(&mut self, expr: &Expression) -> ExprId {
         let kind = match expr {
-            Expression::Literal(lit) => ExprKind::Literal(self.lower_literal(lit)),
+            Expression::Literal(lit) => match lit {
+                Literal::List(l) => {
+                    let elements = l.elements.iter().map(|e| self.lower_expr(e)).collect();
+                    ExprKind::List(elements)
+                }
+                Literal::Map(m) => {
+                    let entries = m
+                        .entries
+                        .iter()
+                        .map(|(key, val)| {
+                            let k = self.arenas.property_keys.intern(&key.name.name, Id);
+                            let v = self.lower_expr(val);
+                            (k, v)
+                        })
+                        .collect();
+                    ExprKind::Map(entries)
+                }
+                _ => ExprKind::Literal(self.lower_literal(lit)),
+            },
             Expression::Variable(v) => match self.scope_stack.resolve(&v.name.name) {
                 Some(binding_id) => ExprKind::Binding(binding_id),
                 None => {
