@@ -575,3 +575,95 @@ fn analyze_merge_with_parameter_values() {
         .any(|op| matches!(op, Operation::Merge(_)));
     assert!(has_merge, "expected a Merge operation");
 }
+
+/// `MATCH (n) SET n.props[$key] = $value RETURN n` lowers to a SetDynamicProperty item.
+///
+/// Unit: `analyze()`
+/// Precondition: SET clause chains a static property lookup with a dynamic key.
+/// Expectation: `analyze` returns `Ok` and the Set operation contains a
+///              `SetDynamicProperty` item.
+#[test]
+fn analyze_set_dynamic_property_key_after_lookup() {
+    use decypher::hir::ops::{Operation, SetItem};
+    let hir = analyze("MATCH (n) SET n.props[$key] = $value RETURN n").unwrap();
+    assert_eq!(hir.parts.len(), 1);
+    let set_op = hir.parts[0]
+        .operations
+        .iter()
+        .find_map(|op| {
+            if let Operation::Set(s) = op {
+                Some(s)
+            } else {
+                None
+            }
+        })
+        .expect("expected a Set operation");
+    assert_eq!(set_op.items.len(), 1);
+    assert!(
+        matches!(set_op.items[0], SetItem::SetDynamicProperty { .. }),
+        "expected SetDynamicProperty item, got {:?}",
+        set_op.items[0]
+    );
+}
+
+/// `MATCH (n) SET n[$k1] = $v1, n[$k2] = $v2 RETURN n` lowers to two SetDynamicProperty items.
+///
+/// Unit: `analyze()`
+/// Precondition: SET clause contains two dynamic-key assignments.
+/// Expectation: `analyze` returns `Ok` and the Set operation contains two
+///              `SetDynamicProperty` items.
+#[test]
+fn analyze_set_multiple_dynamic_property_keys() {
+    use decypher::hir::ops::{Operation, SetItem};
+    let hir = analyze("MATCH (n) SET n[$k1] = $v1, n[$k2] = $v2 RETURN n").unwrap();
+    assert_eq!(hir.parts.len(), 1);
+    let set_op = hir.parts[0]
+        .operations
+        .iter()
+        .find_map(|op| {
+            if let Operation::Set(s) = op {
+                Some(s)
+            } else {
+                None
+            }
+        })
+        .expect("expected a Set operation");
+    assert_eq!(set_op.items.len(), 2, "expected two Set items");
+    for item in &set_op.items {
+        assert!(
+            matches!(item, SetItem::SetDynamicProperty { .. }),
+            "expected SetDynamicProperty item, got {:?}",
+            item
+        );
+    }
+}
+
+/// `MATCH (n) SET n["propName"] = $v RETURN n` lowers to a SetDynamicProperty item.
+///
+/// Unit: `analyze()`
+/// Precondition: SET clause uses a string literal (not a parameter) as the property key.
+/// Expectation: `analyze` returns `Ok` and the Set operation contains a
+///              `SetDynamicProperty` item.
+#[test]
+fn analyze_set_dynamic_property_literal_key() {
+    use decypher::hir::ops::{Operation, SetItem};
+    let hir = analyze("MATCH (n) SET n[\"propName\"] = $v RETURN n").unwrap();
+    assert_eq!(hir.parts.len(), 1);
+    let set_op = hir.parts[0]
+        .operations
+        .iter()
+        .find_map(|op| {
+            if let Operation::Set(s) = op {
+                Some(s)
+            } else {
+                None
+            }
+        })
+        .expect("expected a Set operation");
+    assert_eq!(set_op.items.len(), 1);
+    assert!(
+        matches!(set_op.items[0], SetItem::SetDynamicProperty { .. }),
+        "expected SetDynamicProperty item, got {:?}",
+        set_op.items[0]
+    );
+}

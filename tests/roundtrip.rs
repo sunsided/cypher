@@ -708,3 +708,33 @@ fn rt_merge_with_parameter_values() {
          RETURN p;",
     );
 }
+
+/// Round-trip `SET n.props[$key] = $value`: chained property lookup with dynamic key.
+///
+/// Unit: `ToCypher::to_cypher` / `parse`
+/// Precondition: SET clause chains a static property lookup with a dynamic key.
+/// Expectation: Re-parsed AST equals the original parsed AST.
+#[test]
+fn rt_set_dynamic_property_key_after_lookup() {
+    roundtrip("MATCH (n) SET n.props[$key] = $value RETURN n;");
+}
+
+/// Round-trip `SET n[$k1] = $v1, n[$k2] = $v2`: multiple dynamic property assignments.
+///
+/// Unit: `ToCypher::to_cypher` / `parse`
+/// Precondition: SET clause contains two dynamic-key items.
+/// Expectation: Re-parsed AST equals the original parsed AST.
+#[test]
+fn rt_set_multiple_dynamic_property_keys() {
+    roundtrip("MATCH (n) SET n[$k1] = $v1, n[$k2] = $v2 RETURN n;");
+}
+
+/// Round-trip `SET n["propName"] = $v`: string literal as the dynamic key.
+///
+/// Unit: `ToCypher::to_cypher` / `parse`
+/// Precondition: SET clause uses a string literal as the property key expression.
+/// Expectation: Re-parsed AST equals the original parsed AST.
+#[test]
+fn rt_set_dynamic_property_literal_key() {
+    roundtrip("MATCH (n) SET n[\"propName\"] = $v RETURN n;");
+}

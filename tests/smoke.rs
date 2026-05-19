@@ -557,3 +557,25 @@ fn test_set_property_parameter_value() {
     let result = parse("MATCH (n) SET n.name = $name RETURN n");
     check!(result.is_ok(), "{:?}", result.err());
 }
+
+/// Parse `SET n[$k1] = $v1, n[$k2] = $v2` — multiple dynamic property assignments.
+///
+/// Unit: `parse()`
+/// Precondition: SET clause contains two dynamic-key items.
+/// Expectation: parser returns `Ok`.
+#[test]
+fn test_set_multiple_dynamic_property_keys() {
+    let result = parse("MATCH (n) SET n[$k1] = $v1, n[$k2] = $v2 RETURN n");
+    check!(result.is_ok(), "{:?}", result.err());
+}
+
+/// Parse `SET n["propName"] = $v` — string literal as the dynamic key.
+///
+/// Unit: `parse()`
+/// Precondition: SET clause uses a string literal (not a parameter) as the property key.
+/// Expectation: parser returns `Ok`.
+#[test]
+fn test_set_dynamic_property_literal_key() {
+    let result = parse("MATCH (n) SET n[\"propName\"] = $v RETURN n");
+    check!(result.is_ok(), "{:?}", result.err());
+}
