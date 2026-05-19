@@ -513,7 +513,7 @@ fn analyze_create_with_parameter_value() {
 /// Expectation: `analyze` returns `Ok` with one query part containing a Set operation.
 #[test]
 fn analyze_set_property_parameter_value() {
-    use cypher::hir::ops::Operation;
+    use decypher::hir::ops::Operation;
     let hir = analyze("MATCH (n) SET n.name = $name RETURN n").unwrap();
     assert_eq!(hir.parts.len(), 1);
     let has_set = hir.parts[0]
@@ -531,7 +531,7 @@ fn analyze_set_property_parameter_value() {
 ///              `SetDynamicProperty` item.
 #[test]
 fn analyze_set_dynamic_property_key() {
-    use cypher::hir::ops::{Operation, SetItem};
+    use decypher::hir::ops::{Operation, SetItem};
     let hir = analyze("MATCH (n) SET n[$key] = $value RETURN n").unwrap();
     assert_eq!(hir.parts.len(), 1);
     let set_op = hir.parts[0]
@@ -560,7 +560,7 @@ fn analyze_set_dynamic_property_key() {
 /// Expectation: `analyze` returns `Ok` with one query part containing a Merge operation.
 #[test]
 fn analyze_merge_with_parameter_values() {
-    use cypher::hir::ops::Operation;
+    use decypher::hir::ops::Operation;
     let hir = analyze(
         "MERGE (p:Person {externalId: $externalId}) \
          ON CREATE SET p.name = $name \
