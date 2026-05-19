@@ -194,7 +194,7 @@ impl<T: Copy + Clone> Interner<T> {
         let id = mk(idx);
         self.next += 1;
         self.map.insert(key.to_string(), id);
-        self.display.insert(idx, display.to_string());
+        self.display.insert(id.into(), display.to_string());
         id
     }
 

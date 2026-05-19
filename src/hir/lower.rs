@@ -971,7 +971,7 @@ impl<'cfg> LoweringContext<'cfg> {
             .name
             .name
             .iter()
-            .map(|s| s.name.as_str())
+            .map(|s| s.name.replace('\x00', "\x00\x00"))
             .collect::<Vec<_>>()
             .join("\x00");
         let display = proc
@@ -1718,7 +1718,7 @@ impl<'cfg> LoweringContext<'cfg> {
     fn qualified_function_key(fc: &FunctionInvocation) -> String {
         fc.name
             .iter()
-            .map(|s| s.name.as_str())
+            .map(|s| s.name.replace('\x00', "\x00\x00"))
             .collect::<Vec<_>>()
             .join("\x00")
     }
