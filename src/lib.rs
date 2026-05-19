@@ -22,7 +22,7 @@
 //! # Quick start
 //!
 //! ```
-//! use cypher::parse;
+//! use decypher::parse;
 //!
 //! let query = parse("MATCH (n:Person) RETURN n.name").unwrap();
 //! println!("{} statement(s)", query.statements.len());
@@ -31,7 +31,7 @@
 //! For multi-error recovery use [`parse_all`]:
 //!
 //! ```
-//! use cypher::parse_all;
+//! use decypher::parse_all;
 //!
 //! let (query, diagnostics) = parse_all("RETURN;");
 //! assert!(query.is_none());
@@ -64,7 +64,7 @@ pub mod syntax;
 /// # Example
 ///
 /// ```ignore
-/// use cypher::cst::{parse, AstNode};
+/// use decypher::cst::{parse, AstNode};
 ///
 /// let result = parse("MATCH (n:Person) RETURN n.name");
 /// let source = result.tree();
@@ -166,7 +166,7 @@ impl From<&str> for Parse {
 /// # Example: from a string
 ///
 /// ```
-/// use cypher::parse;
+/// use decypher::parse;
 ///
 /// let query = parse("MATCH (n:Person) RETURN n.name").unwrap();
 /// assert_eq!(query.statements.len(), 1);
@@ -175,8 +175,8 @@ impl From<&str> for Parse {
 /// # Example: from a pre-built CST
 ///
 /// ```
-/// let cst = cypher::parse_cst("MATCH (n:Person) RETURN n.name");
-/// let query = cypher::parse(cst).unwrap();
+/// let cst = decypher::parse_cst("MATCH (n:Person) RETURN n.name");
+/// let query = decypher::parse(cst).unwrap();
 /// assert_eq!(query.statements.len(), 1);
 /// ```
 pub fn parse<T>(input: T) -> Result<Query>
@@ -203,7 +203,7 @@ where
 /// # Example: from a string
 ///
 /// ```
-/// use cypher::parse_with_label;
+/// use decypher::parse_with_label;
 ///
 /// let result = parse_with_label("RETURN 1", "my_script.cypher");
 /// assert!(result.is_ok());
@@ -216,8 +216,8 @@ where
 /// # Example: from a pre-built CST
 ///
 /// ```
-/// let cst = cypher::parse_cst("RETURN 1");
-/// let result = cypher::parse_with_label(cst, "my_script.cypher");
+/// let cst = decypher::parse_cst("RETURN 1");
+/// let result = decypher::parse_with_label(cst, "my_script.cypher");
 /// assert!(result.is_ok());
 /// ```
 pub fn parse_with_label<T>(input: T, label: impl Into<Arc<str>>) -> Result<Query>
@@ -268,7 +268,7 @@ where
 /// # Example
 ///
 /// ```
-/// use cypher::parse_all;
+/// use decypher::parse_all;
 ///
 /// let (query, diagnostics) = parse_all("RETURN;");
 /// assert!(query.is_none());
@@ -292,7 +292,7 @@ pub fn parse_all(input: &str) -> (Option<Query>, Diagnostics) {
 /// # Example
 ///
 /// ```
-/// use cypher::parse_cst;
+/// use decypher::parse_cst;
 ///
 /// let cst = parse_cst("MATCH (n) RETURN n");
 /// assert!(cst.errors.is_empty());
@@ -318,15 +318,15 @@ pub fn parse_cst(input: &str) -> Parse {
 /// # Example: from a string
 ///
 /// ```
-/// let hir = cypher::analyze("MATCH (n:Person) RETURN n.name").unwrap();
+/// let hir = decypher::analyze("MATCH (n:Person) RETURN n.name").unwrap();
 /// assert!(!hir.parts.is_empty());
 /// ```
 ///
 /// # Example: from a previously parsed AST
 ///
 /// ```
-/// let query = cypher::parse("MATCH (n:Person) RETURN n.name").unwrap();
-/// let hir = cypher::analyze(query).unwrap();
+/// let query = decypher::parse("MATCH (n:Person) RETURN n.name").unwrap();
+/// let hir = decypher::analyze(query).unwrap();
 /// assert!(!hir.parts.is_empty());
 /// ```
 #[cfg(feature = "hir")]
@@ -336,7 +336,52 @@ where
     CypherError: From<T::Error>,
 {
     let query = input.try_into().map_err(CypherError::from)?;
-    hir::lower::lower(&query).map_err(|diagnostics| {
+    hir::lower::lower(&query, &hir::LowerConfig::default()).map_err(|diagnostics| {
+        diagnostics
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| CypherError {
+                kind: ErrorKind::Internal {
+                    message: "unknown HIR lowering error".into(),
+                },
+                span: Span::new(0, 0),
+                source_label: None,
+                notes: Vec::new(),
+                source: None,
+            })
+    })
+}
+
+/// Parse and lower a Cypher query with a custom [`hir::LowerConfig`].
+///
+/// Identical to [`analyze`] except the caller supplies a [`hir::LowerConfig`]
+/// to control lowering behaviour — for example, to register user-defined or
+/// plugin aggregate functions via [`hir::AggregateRegistry`].
+///
+/// # Errors
+///
+/// Returns the first error encountered during parsing or HIR lowering.
+///
+/// # Example
+///
+/// ```
+/// let mut config = decypher::hir::LowerConfig::default();
+/// config.aggregates.register("apoc.agg.percentiles");
+/// let hir = decypher::analyze_with_config(
+///     "MATCH (n) WITH apoc.agg.percentiles(n.score) AS p RETURN p",
+///     &config,
+/// )
+/// .unwrap();
+/// assert!(!hir.parts.is_empty());
+/// ```
+#[cfg(feature = "hir")]
+pub fn analyze_with_config<T>(input: T, config: &hir::LowerConfig) -> Result<hir::HirQuery>
+where
+    T: TryInto<Query>,
+    CypherError: From<T::Error>,
+{
+    let query = input.try_into().map_err(CypherError::from)?;
+    hir::lower::lower(&query, config).map_err(|diagnostics| {
         diagnostics
             .into_iter()
             .next()

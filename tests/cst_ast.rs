@@ -1,14 +1,14 @@
-//! Integration tests for the rowan-based typed CST (`cypher::cst`).
+//! Integration tests for the rowan-based typed CST (`decypher::cst`).
 //!
 //! These tests verify that CST nodes can be cast to the expected typed
 //! wrappers and that specific fields and child nodes are accessible.
 
 use assert2::check;
-use cypher::cst::{AstNode, BinOp, BinaryExpr, Expression, UnOp, UnaryExpr, parse};
+use decypher::cst::{AstNode, BinOp, BinaryExpr, Expression, UnOp, UnaryExpr, parse};
 
 /// Every sample query parses and can be cast to a `SourceFile` CST node.
 ///
-/// Unit: `cypher::cst::SourceFile::cast`
+/// Unit: `decypher::cst::SourceFile::cast`
 /// Precondition: A set of common Cypher queries.
 /// Expectation: All queries produce a `Some(SourceFile)` on cast.
 #[test]
@@ -32,15 +32,15 @@ fn smoke_queries_cast_to_source_file() {
     ];
     for input in queries {
         let result = parse(input);
-        let source = cypher::cst::SourceFile::cast(result.tree.clone());
+        let source = decypher::cst::SourceFile::cast(result.tree.clone());
         check!(source.is_some(), "Failed to cast for: {input}");
     }
 }
 
 /// Walk to the first `MATCH` clause in the first statement of `source`.
-fn find_match_clause(source: &cypher::cst::SourceFile) -> Option<cypher::cst::MatchClause> {
+fn find_match_clause(source: &decypher::cst::SourceFile) -> Option<decypher::cst::MatchClause> {
     for clause in source.statements().next()?.clauses() {
-        if let cypher::cst::Clause::Match(m) = clause {
+        if let decypher::cst::Clause::Match(m) = clause {
             return Some(m);
         }
     }
@@ -48,9 +48,9 @@ fn find_match_clause(source: &cypher::cst::SourceFile) -> Option<cypher::cst::Ma
 }
 
 /// Walk to the first `RETURN` clause in the first statement of `source`.
-fn find_return_clause(source: &cypher::cst::SourceFile) -> Option<cypher::cst::ReturnClause> {
+fn find_return_clause(source: &decypher::cst::SourceFile) -> Option<decypher::cst::ReturnClause> {
     for clause in source.statements().next()?.clauses() {
-        if let cypher::cst::Clause::Return(r) = clause {
+        if let decypher::cst::Clause::Return(r) = clause {
             return Some(r);
         }
     }
@@ -58,9 +58,9 @@ fn find_return_clause(source: &cypher::cst::SourceFile) -> Option<cypher::cst::R
 }
 
 /// Walk to the first `DELETE` clause in the first statement of `source`.
-fn find_delete_clause(source: &cypher::cst::SourceFile) -> Option<cypher::cst::DeleteClause> {
+fn find_delete_clause(source: &decypher::cst::SourceFile) -> Option<decypher::cst::DeleteClause> {
     for clause in source.statements().next()?.clauses() {
-        if let cypher::cst::Clause::Delete(d) = clause {
+        if let decypher::cst::Clause::Delete(d) = clause {
             return Some(d);
         }
     }
@@ -68,9 +68,9 @@ fn find_delete_clause(source: &cypher::cst::SourceFile) -> Option<cypher::cst::D
 }
 
 /// Walk to the first `SET` clause in the first statement of `source`.
-fn find_set_clause(source: &cypher::cst::SourceFile) -> Option<cypher::cst::SetClause> {
+fn find_set_clause(source: &decypher::cst::SourceFile) -> Option<decypher::cst::SetClause> {
     for clause in source.statements().next()?.clauses() {
-        if let cypher::cst::Clause::Set(s) = clause {
+        if let decypher::cst::Clause::Set(s) = clause {
             return Some(s);
         }
     }
@@ -78,9 +78,9 @@ fn find_set_clause(source: &cypher::cst::SourceFile) -> Option<cypher::cst::SetC
 }
 
 /// Walk to the first `UNWIND` clause in the first statement of `source`.
-fn find_unwind_clause(source: &cypher::cst::SourceFile) -> Option<cypher::cst::UnwindClause> {
+fn find_unwind_clause(source: &decypher::cst::SourceFile) -> Option<decypher::cst::UnwindClause> {
     for clause in source.statements().next()?.clauses() {
-        if let cypher::cst::Clause::Unwind(u) = clause {
+        if let decypher::cst::Clause::Unwind(u) = clause {
             return Some(u);
         }
     }
@@ -88,9 +88,9 @@ fn find_unwind_clause(source: &cypher::cst::SourceFile) -> Option<cypher::cst::U
 }
 
 /// Walk to the first `CREATE` clause in the first statement of `source`.
-fn find_create_clause(source: &cypher::cst::SourceFile) -> Option<cypher::cst::CreateClause> {
+fn find_create_clause(source: &decypher::cst::SourceFile) -> Option<decypher::cst::CreateClause> {
     for clause in source.statements().next()?.clauses() {
-        if let cypher::cst::Clause::Create(c) = clause {
+        if let decypher::cst::Clause::Create(c) = clause {
             return Some(c);
         }
     }
@@ -98,9 +98,9 @@ fn find_create_clause(source: &cypher::cst::SourceFile) -> Option<cypher::cst::C
 }
 
 /// Walk to the first `MERGE` clause in the first statement of `source`.
-fn find_merge_clause(source: &cypher::cst::SourceFile) -> Option<cypher::cst::MergeClause> {
+fn find_merge_clause(source: &decypher::cst::SourceFile) -> Option<decypher::cst::MergeClause> {
     for clause in source.statements().next()?.clauses() {
-        if let cypher::cst::Clause::Merge(m) = clause {
+        if let decypher::cst::Clause::Merge(m) = clause {
             return Some(m);
         }
     }
@@ -108,9 +108,9 @@ fn find_merge_clause(source: &cypher::cst::SourceFile) -> Option<cypher::cst::Me
 }
 
 /// Walk to the first `REMOVE` clause in the first statement of `source`.
-fn find_remove_clause(source: &cypher::cst::SourceFile) -> Option<cypher::cst::RemoveClause> {
+fn find_remove_clause(source: &decypher::cst::SourceFile) -> Option<decypher::cst::RemoveClause> {
     for clause in source.statements().next()?.clauses() {
-        if let cypher::cst::Clause::Remove(r) = clause {
+        if let decypher::cst::Clause::Remove(r) = clause {
             return Some(r);
         }
     }
@@ -290,25 +290,25 @@ fn roundtrip_text() {
 /// Expectation: Expected CST node types are present.
 #[test]
 fn can_cast_non_matching_returns_none() {
-    use cypher::syntax::{CypherLang, SyntaxNode};
+    use decypher::syntax::{CypherLang, SyntaxNode};
     use rowan::{GreenNodeBuilder, Language};
 
     let mut builder = GreenNodeBuilder::new();
     builder.start_node(CypherLang::kind_to_raw(
-        cypher::syntax::SyntaxKind::SOURCE_FILE,
+        decypher::syntax::SyntaxKind::SOURCE_FILE,
     ));
     builder.finish_node();
     let green = builder.finish();
     let node: SyntaxNode = rowan::SyntaxNode::new_root(green);
 
     check!(BinaryExpr::can_cast(node.kind()) == false);
-    check!(cypher::cst::MatchClause::can_cast(node.kind()) == false);
-    check!(cypher::cst::ReturnClause::can_cast(node.kind()) == false);
+    check!(decypher::cst::MatchClause::can_cast(node.kind()) == false);
+    check!(decypher::cst::ReturnClause::can_cast(node.kind()) == false);
 
-    check!(BinaryExpr::can_cast(cypher::syntax::SyntaxKind::OR_EXPR) == true);
-    check!(BinaryExpr::can_cast(cypher::syntax::SyntaxKind::ADD_SUB_EXPR) == true);
-    check!(UnaryExpr::can_cast(cypher::syntax::SyntaxKind::NOT_EXPR) == true);
-    check!(cypher::cst::SourceFile::can_cast(cypher::syntax::SyntaxKind::SOURCE_FILE) == true);
+    check!(BinaryExpr::can_cast(decypher::syntax::SyntaxKind::OR_EXPR) == true);
+    check!(BinaryExpr::can_cast(decypher::syntax::SyntaxKind::ADD_SUB_EXPR) == true);
+    check!(UnaryExpr::can_cast(decypher::syntax::SyntaxKind::NOT_EXPR) == true);
+    check!(decypher::cst::SourceFile::can_cast(decypher::syntax::SyntaxKind::SOURCE_FILE) == true);
 }
 
 /// Verify CST shape for: delete clause with detach.
@@ -369,7 +369,7 @@ fn function_invocation() {
     let item = proj.items().next().unwrap();
     let expr = item.expr().unwrap();
     match expr {
-        Expression::Atom(cypher::cst::Atom::FunctionInvocation(fi)) => {
+        Expression::Atom(decypher::cst::Atom::FunctionInvocation(fi)) => {
             check!(fi.name().is_some());
         }
         other => panic!("expected FunctionInvocation, got {other:?}"),
@@ -390,7 +390,7 @@ fn list_literal_elements() {
     let item = proj.items().next().unwrap();
     let expr = item.expr().unwrap();
     match expr {
-        Expression::Atom(cypher::cst::Atom::ListLiteral(list)) => {
+        Expression::Atom(decypher::cst::Atom::ListLiteral(list)) => {
             let elements: Vec<_> = list.elements().collect();
             check!(elements.len() == 3);
         }
@@ -412,7 +412,7 @@ fn map_literal_entries() {
     let item = proj.items().next().unwrap();
     let expr = item.expr().unwrap();
     match expr {
-        Expression::Atom(cypher::cst::Atom::MapLiteral(map)) => {
+        Expression::Atom(decypher::cst::Atom::MapLiteral(map)) => {
             let entries: Vec<_> = map.entries().collect();
             check!(entries.len() == 1);
         }
@@ -500,7 +500,7 @@ fn parenthesized_expr() {
     check!(mul.op_kind() == Some(BinOp::Mul));
     let lhs = mul.lhs().unwrap();
     match lhs {
-        Expression::Atom(cypher::cst::Atom::Parenthesized(p)) => {
+        Expression::Atom(decypher::cst::Atom::Parenthesized(p)) => {
             check!(p.expr().is_some());
         }
         other => panic!("expected ParenthesizedExpr, got {other:?}"),
@@ -565,36 +565,40 @@ fn remove_clause() {
 
 // ── New Phase B wrapper tests ────────────────────────────────────
 
-fn find_foreach_clause(source: &cypher::cst::SourceFile) -> Option<cypher::cst::ForeachClause> {
+fn find_foreach_clause(source: &decypher::cst::SourceFile) -> Option<decypher::cst::ForeachClause> {
     for clause in source.statements().next()?.clauses() {
-        if let cypher::cst::Clause::Foreach(f) = clause {
+        if let decypher::cst::Clause::Foreach(f) = clause {
             return Some(f);
         }
     }
     None
 }
 
-fn find_standalone_call(source: &cypher::cst::SourceFile) -> Option<cypher::cst::StandaloneCall> {
+fn find_standalone_call(
+    source: &decypher::cst::SourceFile,
+) -> Option<decypher::cst::StandaloneCall> {
     for clause in source.statements().next()?.clauses() {
-        if let cypher::cst::Clause::StandaloneCall(c) = clause {
+        if let decypher::cst::Clause::StandaloneCall(c) = clause {
             return Some(c);
         }
     }
     None
 }
 
-fn find_in_query_call(source: &cypher::cst::SourceFile) -> Option<cypher::cst::InQueryCall> {
+fn find_in_query_call(source: &decypher::cst::SourceFile) -> Option<decypher::cst::InQueryCall> {
     for clause in source.statements().next()?.clauses() {
-        if let cypher::cst::Clause::InQueryCall(c) = clause {
+        if let decypher::cst::Clause::InQueryCall(c) = clause {
             return Some(c);
         }
     }
     None
 }
 
-fn find_call_subquery(source: &cypher::cst::SourceFile) -> Option<cypher::cst::CallSubqueryClause> {
+fn find_call_subquery(
+    source: &decypher::cst::SourceFile,
+) -> Option<decypher::cst::CallSubqueryClause> {
     for clause in source.statements().next()?.clauses() {
-        if let cypher::cst::Clause::CallSubquery(c) = clause {
+        if let decypher::cst::Clause::CallSubquery(c) = clause {
             return Some(c);
         }
     }
@@ -626,7 +630,7 @@ fn foreach_clause() {
 fn debug_cst_dump() {
     let result = parse("MATCH (n) WHERE EXISTS { (n)-->(m) } RETURN n");
     let source = result.tree();
-    fn dump(node: &cypher::syntax::SyntaxNode, indent: usize) {
+    fn dump(node: &decypher::syntax::SyntaxNode, indent: usize) {
         let prefix = "  ".repeat(indent);
         let text = node.text().to_string();
         let text_preview = if text.len() > 60 {
@@ -653,14 +657,14 @@ fn debug_cst_dump() {
 /// Expectation: Expected CST node types are present.
 #[test]
 fn relationships_pattern_can_cast() {
-    use cypher::syntax::SyntaxKind;
-    check!(cypher::cst::RelationshipsPattern::can_cast(
+    use decypher::syntax::SyntaxKind;
+    check!(decypher::cst::RelationshipsPattern::can_cast(
         SyntaxKind::RELATIONSHIPS_PATTERN
     ));
-    check!(!cypher::cst::RelationshipsPattern::can_cast(
+    check!(!decypher::cst::RelationshipsPattern::can_cast(
         SyntaxKind::PATTERN
     ));
-    check!(!cypher::cst::RelationshipsPattern::can_cast(
+    check!(!decypher::cst::RelationshipsPattern::can_cast(
         SyntaxKind::NODE_PATTERN
     ));
 }
@@ -677,7 +681,7 @@ fn yield_items_star() {
     let yield_items = source
         .syntax()
         .descendants()
-        .find_map(cypher::cst::YieldItems::cast);
+        .find_map(decypher::cst::YieldItems::cast);
     let yield_items = yield_items.expect("YieldItems found");
     let items: Vec<_> = yield_items.items().collect();
     check!(!items.is_empty());
@@ -695,7 +699,7 @@ fn yield_item_with_alias() {
     let item = source
         .syntax()
         .descendants()
-        .find_map(cypher::cst::YieldItem::cast);
+        .find_map(decypher::cst::YieldItem::cast);
     check!(item.is_some(), "YieldItem found");
     let item = item.unwrap();
     check!(item.field_name().is_some());
@@ -785,7 +789,7 @@ fn show_clause_with_kind() {
     let show = source
         .syntax()
         .descendants()
-        .find_map(cypher::cst::ShowClause::cast)
+        .find_map(decypher::cst::ShowClause::cast)
         .unwrap();
     check!(show.kind().is_some());
 }
@@ -802,7 +806,7 @@ fn use_clause() {
     let use_clause = source
         .syntax()
         .descendants()
-        .find_map(cypher::cst::UseClause::cast)
+        .find_map(decypher::cst::UseClause::cast)
         .unwrap();
     check!(use_clause.schema_name().is_some());
     let schema_name = use_clause.schema_name().unwrap();
@@ -821,7 +825,7 @@ fn union_all() {
     let union = source
         .syntax()
         .descendants()
-        .find_map(cypher::cst::Union::cast);
+        .find_map(decypher::cst::Union::cast);
     check!(union.is_some(), "Union found");
     let union = union.unwrap();
     check!(union.all_token().is_some());
@@ -839,7 +843,7 @@ fn create_index() {
     let create_index = source
         .syntax()
         .descendants()
-        .find_map(cypher::cst::CreateIndex::cast);
+        .find_map(decypher::cst::CreateIndex::cast);
     check!(create_index.is_some(), "CreateIndex found");
     let ci = create_index.unwrap();
     check!(ci.if_not_exists() == false);
@@ -858,7 +862,7 @@ fn create_index_if_not_exists() {
     let ci = source
         .syntax()
         .descendants()
-        .find_map(cypher::cst::CreateIndex::cast)
+        .find_map(decypher::cst::CreateIndex::cast)
         .unwrap();
     check!(ci.if_not_exists() == true);
 }
@@ -875,7 +879,7 @@ fn drop_index() {
     let drop_idx = source
         .syntax()
         .descendants()
-        .find_map(cypher::cst::DropIndex::cast);
+        .find_map(decypher::cst::DropIndex::cast);
     check!(drop_idx.is_some(), "DropIndex found");
     let di = drop_idx.unwrap();
     check!(di.name().is_some());
@@ -894,7 +898,7 @@ fn drop_index_if_exists() {
     let di = source
         .syntax()
         .descendants()
-        .find_map(cypher::cst::DropIndex::cast)
+        .find_map(decypher::cst::DropIndex::cast)
         .unwrap();
     check!(di.if_exists() == true);
 }
@@ -911,7 +915,7 @@ fn create_constraint() {
     let cc = source
         .syntax()
         .descendants()
-        .find_map(cypher::cst::CreateConstraint::cast);
+        .find_map(decypher::cst::CreateConstraint::cast);
     check!(cc.is_some(), "CreateConstraint found");
 }
 
@@ -927,7 +931,7 @@ fn drop_constraint() {
     let dc = source
         .syntax()
         .descendants()
-        .find_map(cypher::cst::DropConstraint::cast);
+        .find_map(decypher::cst::DropConstraint::cast);
     check!(dc.is_some(), "DropConstraint found");
     let dc = dc.unwrap();
     check!(dc.if_exists() == true);
@@ -942,7 +946,7 @@ fn drop_constraint() {
 fn debug_cst_dump_rel() {
     let result = parse("MATCH (a)-[r]->(b) RETURN a, r, b");
     let source = result.tree();
-    fn dump(node: &cypher::syntax::SyntaxNode, indent: usize) {
+    fn dump(node: &decypher::syntax::SyntaxNode, indent: usize) {
         let prefix = "  ".repeat(indent);
         let text = node.text().to_string();
         let text_preview = if text.len() > 60 {
@@ -969,7 +973,7 @@ fn debug_cst_dump_rel2() {
     for chain in source
         .syntax()
         .descendants()
-        .filter_map(cypher::cst::PatternElementChain::cast)
+        .filter_map(decypher::cst::PatternElementChain::cast)
     {
         println!(
             "PatternElementChain syntax kind: {:?}",
@@ -989,7 +993,7 @@ fn debug_cst_dump_rel2() {
         let detail = chain
             .syntax()
             .children()
-            .find_map(cypher::cst::RelationshipDetail::cast);
+            .find_map(decypher::cst::RelationshipDetail::cast);
         println!(
             "  detail (direct): {:?}",
             detail.map(|d| d.syntax().text().to_string())
@@ -1005,7 +1009,7 @@ fn debug_cst_dump_rel2() {
 fn debug_cst_dump_case() {
     let result = parse("MATCH (n) RETURN CASE WHEN n.active THEN 'yes' ELSE 'no' END");
     let source = result.tree();
-    fn dump(node: &cypher::syntax::SyntaxNode, indent: usize) {
+    fn dump(node: &decypher::syntax::SyntaxNode, indent: usize) {
         let prefix = "  ".repeat(indent);
         let text = node.text().to_string();
         let text_preview = if text.len() > 60 {
@@ -1034,7 +1038,7 @@ fn debug_cst_dump_case() {
 fn debug_cst_dump_is_not_null() {
     let result = parse("RETURN x IS NOT NULL");
     let source = result.tree();
-    fn dump(node: &cypher::syntax::SyntaxNode, indent: usize) {
+    fn dump(node: &decypher::syntax::SyntaxNode, indent: usize) {
         let prefix = "  ".repeat(indent);
         let text = node.text().to_string();
         let text_preview = if text.len() > 60 {
@@ -1057,12 +1061,12 @@ fn debug_cst_dump_is_not_null() {
     for proj in source
         .syntax()
         .descendants()
-        .filter_map(cypher::cst::ProjectionItem::cast)
+        .filter_map(decypher::cst::ProjectionItem::cast)
     {
         if let Some(expr) = proj.expr() {
             println!("Expression: {:?}", expr);
             match expr {
-                cypher::cst::Expression::BinaryExpr(b) => {
+                decypher::cst::Expression::BinaryExpr(b) => {
                     println!("  BinaryExpr op_kind: {:?}", b.op_kind());
                 }
                 other => {
@@ -1082,7 +1086,7 @@ fn debug_cst_dump_is_not_null() {
 fn debug_cst_dump_null() {
     let result = parse("RETURN null;");
     let source = result.tree();
-    fn dump(node: &cypher::syntax::SyntaxNode, indent: usize) {
+    fn dump(node: &decypher::syntax::SyntaxNode, indent: usize) {
         let prefix = "  ".repeat(indent);
         let text = node.text().to_string();
         let text_preview = if text.len() > 60 {
@@ -1105,7 +1109,7 @@ fn debug_cst_dump_null() {
     for proj in source
         .syntax()
         .descendants()
-        .filter_map(cypher::cst::ProjectionItem::cast)
+        .filter_map(decypher::cst::ProjectionItem::cast)
     {
         println!("ProjectionItem children:");
         for child in proj.syntax().children() {
@@ -1129,7 +1133,7 @@ fn debug_cst_dump_null() {
 /// Expectation: Expected CST node types are present.
 #[test]
 fn constraint_composite_node_key() {
-    use cypher::cst::parse as cst_parse;
+    use decypher::cst::parse as cst_parse;
     let result = cst_parse(
         "CREATE CONSTRAINT composite_key FOR (p:Person) REQUIRE (p.country, p.id) IS NODE KEY;",
     );
@@ -1144,7 +1148,7 @@ fn constraint_composite_node_key() {
         .next()
         .expect("expected schema command");
     match cmd {
-        cypher::cst::SchemaCommand::CreateConstraint(cc) => {
+        decypher::cst::SchemaCommand::CreateConstraint(cc) => {
             let ck = cc.constraint_kind().expect("expected constraint kind");
             let tokens: Vec<_> = ck
                 .syntax()
@@ -1171,7 +1175,7 @@ fn constraint_composite_node_key() {
 /// Expectation: Expected CST node types are present.
 #[test]
 fn index_label_alternatives() {
-    use cypher::cst::parse as cst_parse;
+    use decypher::cst::parse as cst_parse;
     let result =
         cst_parse("CREATE FULLTEXT INDEX person_names FOR (p:Person|Employee) ON EACH [p.name];");
     check!(
@@ -1185,11 +1189,11 @@ fn index_label_alternatives() {
         .next()
         .expect("expected schema command");
     match cmd {
-        cypher::cst::SchemaCommand::CreateIndex(ci) => {
+        decypher::cst::SchemaCommand::CreateIndex(ci) => {
             let labels: Vec<_> = ci
                 .syntax()
                 .descendants()
-                .filter(|n| n.kind() == cypher::syntax::SyntaxKind::NODE_LABEL)
+                .filter(|n| n.kind() == decypher::syntax::SyntaxKind::NODE_LABEL)
                 .collect();
             check!(labels.len() == 2, "expected 2 labels, got {}", labels.len());
         }
@@ -1204,7 +1208,7 @@ fn index_label_alternatives() {
 /// Expectation: Expected CST node types are present.
 #[test]
 fn index_relationship_type_alternatives() {
-    use cypher::cst::parse as cst_parse;
+    use decypher::cst::parse as cst_parse;
     let result =
         cst_parse("CREATE FULLTEXT INDEX rel_names FOR ()-[r:KNOWS|LIKES]-() ON EACH [r.since];");
     check!(
@@ -1218,11 +1222,11 @@ fn index_relationship_type_alternatives() {
         .next()
         .expect("expected schema command");
     match cmd {
-        cypher::cst::SchemaCommand::CreateIndex(ci) => {
+        decypher::cst::SchemaCommand::CreateIndex(ci) => {
             let rel_type_names: Vec<_> = ci
                 .syntax()
                 .descendants()
-                .filter(|n| n.kind() == cypher::syntax::SyntaxKind::REL_TYPE_NAME)
+                .filter(|n| n.kind() == decypher::syntax::SyntaxKind::REL_TYPE_NAME)
                 .collect();
             check!(
                 rel_type_names.len() == 2,
@@ -1241,7 +1245,7 @@ fn index_relationship_type_alternatives() {
 /// Expectation: Expected CST node types are present.
 #[test]
 fn collect_subquery_expr() {
-    use cypher::cst::parse as cst_parse;
+    use decypher::cst::parse as cst_parse;
     let result = cst_parse("RETURN COLLECT { MATCH (n) RETURN n };");
     check!(
         result.errors.is_empty(),
@@ -1252,7 +1256,7 @@ fn collect_subquery_expr() {
     let collect_subqueries: Vec<_> = source
         .syntax()
         .descendants()
-        .filter(|n| n.kind() == cypher::syntax::SyntaxKind::COLLECT_SUBQUERY)
+        .filter(|n| n.kind() == decypher::syntax::SyntaxKind::COLLECT_SUBQUERY)
         .collect();
     check!(
         collect_subqueries.len() == 1,
@@ -1268,7 +1272,7 @@ fn collect_subquery_expr() {
 /// Expectation: Expected CST node types are present.
 #[test]
 fn count_subquery_expr() {
-    use cypher::cst::parse as cst_parse;
+    use decypher::cst::parse as cst_parse;
     let result = cst_parse("RETURN COUNT { MATCH (n) RETURN n };");
     check!(
         result.errors.is_empty(),
@@ -1279,7 +1283,7 @@ fn count_subquery_expr() {
     let count_subqueries: Vec<_> = source
         .syntax()
         .descendants()
-        .filter(|n| n.kind() == cypher::syntax::SyntaxKind::COUNT_SUBQUERY)
+        .filter(|n| n.kind() == decypher::syntax::SyntaxKind::COUNT_SUBQUERY)
         .collect();
     check!(
         count_subqueries.len() == 1,
@@ -1295,7 +1299,7 @@ fn count_subquery_expr() {
 /// Expectation: Expected CST node types are present.
 #[test]
 fn label_expression_cst_nodes() {
-    use cypher::cst::parse as cst_parse;
+    use decypher::cst::parse as cst_parse;
     let result = cst_parse("MATCH (n:(Person|Company)&!Deleted) RETURN n;");
     check!(
         result.errors.is_empty(),
@@ -1306,22 +1310,22 @@ fn label_expression_cst_nodes() {
     let label_exprs: Vec<_> = source
         .syntax()
         .descendants()
-        .filter(|n| n.kind() == cypher::syntax::SyntaxKind::LABEL_EXPRESSION)
+        .filter(|n| n.kind() == decypher::syntax::SyntaxKind::LABEL_EXPRESSION)
         .collect();
     let and_nodes: Vec<_> = source
         .syntax()
         .descendants()
-        .filter(|n| n.kind() == cypher::syntax::SyntaxKind::LABEL_AND)
+        .filter(|n| n.kind() == decypher::syntax::SyntaxKind::LABEL_AND)
         .collect();
     let or_nodes: Vec<_> = source
         .syntax()
         .descendants()
-        .filter(|n| n.kind() == cypher::syntax::SyntaxKind::LABEL_OR)
+        .filter(|n| n.kind() == decypher::syntax::SyntaxKind::LABEL_OR)
         .collect();
     let not_nodes: Vec<_> = source
         .syntax()
         .descendants()
-        .filter(|n| n.kind() == cypher::syntax::SyntaxKind::LABEL_NOT)
+        .filter(|n| n.kind() == decypher::syntax::SyntaxKind::LABEL_NOT)
         .collect();
     check!(label_exprs.len() == 1);
     check!(and_nodes.len() >= 1);
@@ -1336,7 +1340,7 @@ fn label_expression_cst_nodes() {
 /// Expectation: Expected CST node types are present.
 #[test]
 fn quantified_path_pattern_cst_node() {
-    use cypher::cst::parse as cst_parse;
+    use decypher::cst::parse as cst_parse;
     let result = cst_parse("MATCH p = ((a)-[:R]->(b)){1,3} RETURN p;");
     check!(
         result.errors.is_empty(),
@@ -1347,7 +1351,7 @@ fn quantified_path_pattern_cst_node() {
     let quantified: Vec<_> = source
         .syntax()
         .descendants()
-        .filter(|n| n.kind() == cypher::syntax::SyntaxKind::QUANTIFIED_PATH_PATTERN)
+        .filter(|n| n.kind() == decypher::syntax::SyntaxKind::QUANTIFIED_PATH_PATTERN)
         .collect();
     check!(
         quantified.len() == 1,
@@ -1363,7 +1367,7 @@ fn quantified_path_pattern_cst_node() {
 /// Expectation: Expected CST node types are present.
 #[test]
 fn dynamic_label_cst_node() {
-    use cypher::cst::parse as cst_parse;
+    use decypher::cst::parse as cst_parse;
     let result = cst_parse("MATCH (n:$(label)) RETURN n;");
     check!(
         result.errors.is_empty(),
@@ -1374,7 +1378,7 @@ fn dynamic_label_cst_node() {
     let dynamic: Vec<_> = source
         .syntax()
         .descendants()
-        .filter(|n| n.kind() == cypher::syntax::SyntaxKind::DYNAMIC_LABEL)
+        .filter(|n| n.kind() == decypher::syntax::SyntaxKind::DYNAMIC_LABEL)
         .collect();
     check!(
         dynamic.len() == 1,

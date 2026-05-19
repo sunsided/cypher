@@ -1,12 +1,15 @@
-//! Integration tests for the HIR lowering pass (`cypher::analyze`).
+//! Integration tests for the HIR lowering pass (`decypher::analyze`).
 //!
-//! These tests call [`cypher::analyze`] on Cypher strings and verify the
-//! shape of the resulting [`cypher::hir::HirQuery`].
+//! These tests call [`decypher::analyze`] on Cypher strings and verify the
+//! shape of the resulting [`decypher::hir::HirQuery`].
 
-use cypher::analyze;
-use cypher::hir::{
-    RelationshipDirection,
-    ops::{MatchOp, Operation},
+use assert2::check;
+use decypher::analyze;
+use decypher::hir::{
+    ExprKind, LowerConfig, RelationshipDirection,
+    expr::{BinaryOp, Literal as HirLiteral},
+    ops::ProjectOp,
+    ops::{AggregateOp, MatchOp, Operation},
 };
 
 fn find_match_operation(operations: &[Operation]) -> &MatchOp {
@@ -22,6 +25,50 @@ fn find_match_operation(operations: &[Operation]) -> &MatchOp {
         .expect("expected a Match operation")
 }
 
+fn find_first_project_expression(hir: &decypher::hir::HirQuery) -> &ExprKind {
+    let part = hir.parts.first().expect("expected at least one query part");
+    let project = part
+        .operations
+        .iter()
+        .find_map(|op| match op {
+            Operation::Project(project) => Some(project),
+            _ => None,
+        })
+        .expect("expected a Project operation");
+    let expression_id = project
+        .items
+        .first()
+        .expect("expected at least one projection item")
+        .expression;
+    &hir.arenas.expressions.get(expression_id).kind
+}
+
+fn find_project_operation(operations: &[Operation]) -> &ProjectOp {
+    operations
+        .iter()
+        .find_map(|op| {
+            if let Operation::Project(project) = op {
+                Some(project)
+            } else {
+                None
+            }
+        })
+        .expect("expected a Project operation")
+}
+
+fn assert_integer_literal(
+    hir: &decypher::hir::HirQuery,
+    expr_id: decypher::hir::ExprId,
+    value: i64,
+) {
+    let expr = hir.arenas.expressions.get(expr_id);
+    check!(
+        matches!(expr.kind, ExprKind::Literal(HirLiteral::Integer(v)) if v == value),
+        "expected integer literal {value}, got {:?}",
+        expr.kind
+    );
+}
+
 /// A basic `MATCH … RETURN` query lowers to exactly one query part.
 ///
 /// Unit: `analyze()`
@@ -30,7 +77,7 @@ fn find_match_operation(operations: &[Operation]) -> &MatchOp {
 #[test]
 fn analyze_basic_query() {
     let hir = analyze("MATCH (p:Person)-[:KNOWS]->(f) WHERE p.age > 18 RETURN f.name").unwrap();
-    assert_eq!(hir.parts.len(), 1);
+    check!(hir.parts.len() == 1);
 }
 
 /// A `WITH`-split query lowers to two query parts.
@@ -42,7 +89,7 @@ fn analyze_basic_query() {
 fn analyze_multi_part() {
     let hir = analyze("MATCH (p:Person) WITH p, count(*) AS cnt WHERE cnt > 3 RETURN p.name, cnt")
         .unwrap();
-    assert_eq!(hir.parts.len(), 2);
+    check!(hir.parts.len() == 2);
 }
 
 /// Referencing an unbound variable (`x`) produces an error.
@@ -53,7 +100,7 @@ fn analyze_multi_part() {
 #[test]
 fn analyze_unknown_variable() {
     let result = analyze("MATCH (p:Person) RETURN x.name");
-    assert!(result.is_err());
+    check!(result.is_err());
 }
 
 /// A `CREATE` query with no RETURN lowers to one query part.
@@ -64,7 +111,7 @@ fn analyze_unknown_variable() {
 #[test]
 fn analyze_create_query() {
     let hir = analyze("CREATE (p:Person {name: 'Alice'})").unwrap();
-    assert_eq!(hir.parts.len(), 1);
+    check!(hir.parts.len() == 1);
 }
 
 /// An `OPTIONAL MATCH … RETURN` query lowers to one query part.
@@ -75,60 +122,58 @@ fn analyze_create_query() {
 #[test]
 fn analyze_optional_match() {
     let hir = analyze("OPTIONAL MATCH (p:Person) RETURN p.name").unwrap();
-    assert_eq!(hir.parts.len(), 1);
+    check!(hir.parts.len() == 1);
 }
 
 #[test]
 fn analyze_from_preparsed_query() {
     let query =
-        cypher::parse("MATCH (p:Person)-[:KNOWS]->(f) WHERE p.age > 18 RETURN f.name").unwrap();
+        decypher::parse("MATCH (p:Person)-[:KNOWS]->(f) WHERE p.age > 18 RETURN f.name").unwrap();
     let hir = analyze(query).unwrap();
-    assert_eq!(hir.parts.len(), 1);
+    check!(hir.parts.len() == 1);
 }
 
 #[test]
 fn analyze_from_preparsed_query_multi_part() {
-    let query =
-        cypher::parse("MATCH (p:Person) WITH p, count(*) AS cnt WHERE cnt > 3 RETURN p.name, cnt")
-            .unwrap();
+    let query = decypher::parse(
+        "MATCH (p:Person) WITH p, count(*) AS cnt WHERE cnt > 3 RETURN p.name, cnt",
+    )
+    .unwrap();
     let hir = analyze(query).unwrap();
-    assert_eq!(hir.parts.len(), 2);
+    check!(hir.parts.len() == 2);
 }
 
 #[test]
 fn analyze_str_and_query_produce_same_result() {
     let input = "MATCH (p:Person)-[:KNOWS]->(f) RETURN f.name";
     let hir_from_str = analyze(input).unwrap();
-    let query = cypher::parse(input).unwrap();
+    let query = decypher::parse(input).unwrap();
     let hir_from_query = analyze(query).unwrap();
-    assert_eq!(hir_from_str.parts.len(), hir_from_query.parts.len());
+    check!(hir_from_str.parts.len() == hir_from_query.parts.len());
 }
 
 #[test]
 fn try_from_str_for_query() {
     use std::convert::TryFrom;
-    let query = cypher::Query::try_from("MATCH (n) RETURN n").unwrap();
-    assert!(!query.statements.is_empty());
+    let query = decypher::Query::try_from("MATCH (n) RETURN n").unwrap();
+    check!(!query.statements.is_empty());
 }
 
 #[test]
 fn try_from_str_for_query_invalid() {
     use std::convert::TryFrom;
-    let result = cypher::Query::try_from("INVALID !!!");
-    assert!(result.is_err());
+    let result = decypher::Query::try_from("INVALID !!!");
+    check!(result.is_err());
 }
 
 #[test]
 fn analyze_left_directed_relationship_lowers_to_right_to_left() {
     let hir = analyze("MATCH (a)<-[:T]-(b) RETURN a").unwrap();
-    assert_eq!(hir.parts.len(), 1);
+    check!(hir.parts.len() == 1);
     let m = find_match_operation(&hir.parts[0].operations);
 
-    assert_eq!(m.pattern.relationships.len(), 1);
-    assert_eq!(
-        m.pattern.relationships[0].direction,
-        RelationshipDirection::RightToLeft
-    );
+    check!(m.pattern.relationships.len() == 1);
+    check!(m.pattern.relationships[0].direction == RelationshipDirection::RightToLeft);
 }
 
 /// Relationships in a chained path must track the correct left (source) node.
@@ -143,11 +188,309 @@ fn chained_path_relationship_left_indices() {
 
     let m = find_match_operation(&part.operations);
     let rels = &m.pattern.relationships;
-    assert_eq!(rels.len(), 2, "expected two relationships");
-    assert_eq!(rels[0].left, 0, "rel[0].left should be 0");
-    assert_eq!(rels[0].right, 1, "rel[0].right should be 1");
-    assert_eq!(rels[1].left, 1, "rel[1].left should be 1, not 0");
-    assert_eq!(rels[1].right, 2, "rel[1].right should be 2");
+    check!(rels.len() == 2, "expected two relationships");
+    check!(rels[0].left == 0, "rel[0].left should be 0");
+    check!(rels[0].right == 1, "rel[0].right should be 1");
+    check!(rels[1].left == 1, "rel[1].left should be 1, not 0");
+    check!(rels[1].right == 2, "rel[1].right should be 2");
+}
+
+#[test]
+fn analyze_function_call_list_literal_argument() {
+    let hir = analyze("RETURN size([1, 2, 3]) AS len").unwrap();
+    let project = find_project_operation(&hir.parts[0].operations);
+
+    let call_expr = hir.arenas.expressions.get(project.items[0].expression);
+    let list_arg = match &call_expr.kind {
+        ExprKind::FunctionCall { args, .. } => {
+            check!(args.len() == 1, "expected a single function argument");
+            args[0]
+        }
+        other => panic!("expected function call expression, got {other:?}"),
+    };
+
+    let list_expr = hir.arenas.expressions.get(list_arg);
+    match &list_expr.kind {
+        ExprKind::List(elements) => {
+            check!(elements.len() == 3);
+            assert_integer_literal(&hir, elements[0], 1);
+            assert_integer_literal(&hir, elements[1], 2);
+            assert_integer_literal(&hir, elements[2], 3);
+        }
+        other => panic!("expected list literal argument, got {other:?}"),
+    }
+}
+
+#[test]
+fn analyze_function_call_head_list_literal_argument() {
+    let hir = analyze("RETURN head([1, 2, 3]) AS h").unwrap();
+    let project = find_project_operation(&hir.parts[0].operations);
+
+    let call_expr = hir.arenas.expressions.get(project.items[0].expression);
+    let list_arg = match &call_expr.kind {
+        ExprKind::FunctionCall { args, .. } => {
+            check!(args.len() == 1, "expected a single function argument");
+            args[0]
+        }
+        other => panic!("expected function call expression, got {other:?}"),
+    };
+
+    let list_expr = hir.arenas.expressions.get(list_arg);
+    match &list_expr.kind {
+        ExprKind::List(elements) => {
+            check!(elements.len() == 3);
+            assert_integer_literal(&hir, elements[0], 1);
+            assert_integer_literal(&hir, elements[1], 2);
+            assert_integer_literal(&hir, elements[2], 3);
+        }
+        other => panic!("expected list literal argument, got {other:?}"),
+    }
+}
+
+#[test]
+fn analyze_function_call_tail_list_literal_argument() {
+    let hir = analyze("RETURN tail([1, 2, 3]) AS t").unwrap();
+    let project = find_project_operation(&hir.parts[0].operations);
+
+    let call_expr = hir.arenas.expressions.get(project.items[0].expression);
+    let list_arg = match &call_expr.kind {
+        ExprKind::FunctionCall { args, .. } => {
+            check!(args.len() == 1, "expected a single function argument");
+            args[0]
+        }
+        other => panic!("expected function call expression, got {other:?}"),
+    };
+
+    let list_expr = hir.arenas.expressions.get(list_arg);
+    match &list_expr.kind {
+        ExprKind::List(elements) => {
+            check!(elements.len() == 3);
+            assert_integer_literal(&hir, elements[0], 1);
+            assert_integer_literal(&hir, elements[1], 2);
+            assert_integer_literal(&hir, elements[2], 3);
+        }
+        other => panic!("expected list literal argument, got {other:?}"),
+    }
+}
+
+#[test]
+fn analyze_function_call_map_literal_argument() {
+    let hir = analyze("RETURN keys({a: 1, b: 2}) AS k").unwrap();
+    let project = find_project_operation(&hir.parts[0].operations);
+
+    let call_expr = hir.arenas.expressions.get(project.items[0].expression);
+    let map_arg = match &call_expr.kind {
+        ExprKind::FunctionCall { args, .. } => {
+            check!(args.len() == 1, "expected a single function argument");
+            args[0]
+        }
+        other => panic!("expected function call expression, got {other:?}"),
+    };
+
+    let map_expr = hir.arenas.expressions.get(map_arg);
+    match &map_expr.kind {
+        ExprKind::Map(entries) => {
+            check!(entries.len() == 2);
+            let key_a = hir.arenas.property_keys.name_of(entries[0].0);
+            let key_b = hir.arenas.property_keys.name_of(entries[1].0);
+            check!(key_a == Some("a"), "first key should be 'a'");
+            check!(key_b == Some("b"), "second key should be 'b'");
+            assert_integer_literal(&hir, entries[0].1, 1);
+            assert_integer_literal(&hir, entries[1].1, 2);
+        }
+        other => panic!("expected map literal argument, got {other:?}"),
+    }
+}
+
+#[test]
+fn analyze_standalone_list_literal() {
+    let hir = analyze("RETURN [1, 2, 3] AS lst").unwrap();
+    let project = find_project_operation(&hir.parts[0].operations);
+
+    let list_expr = hir.arenas.expressions.get(project.items[0].expression);
+    match &list_expr.kind {
+        ExprKind::List(elements) => {
+            check!(elements.len() == 3);
+            assert_integer_literal(&hir, elements[0], 1);
+            assert_integer_literal(&hir, elements[1], 2);
+            assert_integer_literal(&hir, elements[2], 3);
+        }
+        other => panic!("expected list literal expression, got {other:?}"),
+    }
+}
+
+/// `RETURN apoc.text.distance(…)` preserves the full qualified name in the interned FunctionId.
+///
+/// Unit: `analyze()` → `lower_return` → `FunctionId` interning
+/// Precondition: Qualified function call with dotted namespace in RETURN.
+/// Expectation: `arenas.functions.name_of(id)` returns the full dotted name.
+#[test]
+fn analyze_return_preserves_qualified_function_name() {
+    let hir = analyze("RETURN apoc.text.distance('hello', 'world') AS d").unwrap();
+    let ops = &hir.parts[0].operations;
+
+    let function_id = match &ops[0] {
+        Operation::Project(op) => match &hir.arenas.expressions.get(op.items[0].expression).kind {
+            ExprKind::FunctionCall { function, .. } => *function,
+            _ => panic!("expected FunctionCall expression"),
+        },
+        _ => panic!("expected Project operation"),
+    };
+
+    assert_eq!(
+        hir.arenas.functions.name_of(function_id),
+        Some("apoc.text.distance"),
+    );
+}
+
+/// `WITH apoc.coll.count(…) AS c` preserves the qualified name through the aggregate interning path.
+///
+/// Unit: `lower()` with custom registry → `lower_with` aggregate arm → `FunctionId` interning
+/// Precondition: Qualified function registered as a custom aggregate via `LowerConfig`.
+/// Expectation: `arenas.functions.name_of(aggregate.function)` returns the full dotted name.
+#[test]
+fn analyze_with_aggregate_preserves_qualified_function_name() {
+    let mut config = LowerConfig::default();
+    config.aggregates.register("apoc.coll.count");
+    let query = decypher::parse("MATCH (n) WITH apoc.coll.count(n.name) AS c RETURN c").unwrap();
+    let hir = decypher::hir::lower::lower(&query, &config).unwrap();
+
+    let function_id = hir.parts[0]
+        .operations
+        .iter()
+        .find_map(|op| {
+            if let Operation::Aggregate(AggregateOp { aggregates, .. }) = op {
+                aggregates.first().map(|a| a.function)
+            } else {
+                None
+            }
+        })
+        .expect("expected an Aggregate operation with at least one aggregate item");
+
+    assert_eq!(
+        hir.arenas.functions.name_of(function_id),
+        Some("apoc.coll.count"),
+    );
+}
+
+/// `RETURN apoc.coll.count(…) AS c` preserves the qualified name through the RETURN aggregate path.
+///
+/// Unit: `lower()` with custom registry → `lower_return` aggregate arm → `FunctionId` interning
+/// Precondition: Qualified function registered as a custom aggregate via `LowerConfig`.
+/// Expectation: `arenas.functions.name_of(aggregate.function)` returns the full dotted name.
+#[test]
+fn analyze_return_aggregate_preserves_qualified_function_name() {
+    let mut config = LowerConfig::default();
+    config.aggregates.register("apoc.coll.count");
+    let query = decypher::parse("MATCH (n) RETURN apoc.coll.count(n.name) AS c").unwrap();
+    let hir = decypher::hir::lower::lower(&query, &config).unwrap();
+
+    let function_id = hir.parts[0]
+        .operations
+        .iter()
+        .find_map(|op| {
+            if let Operation::Aggregate(AggregateOp { aggregates, .. }) = op {
+                aggregates.first().map(|a| a.function)
+            } else {
+                None
+            }
+        })
+        .expect("expected an Aggregate operation with at least one aggregate item");
+
+    assert_eq!(
+        hir.arenas.functions.name_of(function_id),
+        Some("apoc.coll.count"),
+    );
+}
+
+#[test]
+fn function_call_single_binary_argument_lowers_as_single_arg() {
+    let hir = analyze("RETURN round(1 + 2) AS r").unwrap();
+    let expr_kind = find_first_project_expression(&hir);
+
+    let args = match expr_kind {
+        ExprKind::FunctionCall { args, .. } => args,
+        other => panic!("expected FunctionCall, got {other:?}"),
+    };
+
+    assert_eq!(args.len(), 1, "expected exactly one function argument");
+    let arg_expr = &hir.arenas.expressions.get(args[0]).kind;
+    match arg_expr {
+        ExprKind::Binary { op, .. } => assert_eq!(*op, BinaryOp::Add),
+        other => panic!("expected binary addition argument, got {other:?}"),
+    }
+}
+
+#[test]
+fn function_call_chained_binary_argument_lowers_as_single_arg() {
+    let hir = analyze("RETURN round(3.0 * 4.0 / 5.0) AS r").unwrap();
+    let expr_kind = find_first_project_expression(&hir);
+
+    let args = match expr_kind {
+        ExprKind::FunctionCall { args, .. } => args,
+        other => panic!("expected FunctionCall, got {other:?}"),
+    };
+
+    assert_eq!(args.len(), 1, "expected exactly one function argument");
+    let arg_expr = &hir.arenas.expressions.get(args[0]).kind;
+    match arg_expr {
+        ExprKind::Binary { op, .. } => assert_eq!(*op, BinaryOp::Divide),
+        other => panic!("expected binary division argument, got {other:?}"),
+    }
+}
+
+#[test]
+fn function_call_mixed_precedence_argument_lowers_as_single_arg() {
+    // 1 + 2 * 3 must lower as Add(1, Mul(2, 3)), not a flat chain
+    let hir = analyze("RETURN round(1 + 2 * 3) AS r").unwrap();
+    let expr_kind = find_first_project_expression(&hir);
+
+    let args = match expr_kind {
+        ExprKind::FunctionCall { args, .. } => args,
+        other => panic!("expected FunctionCall, got {other:?}"),
+    };
+
+    assert_eq!(args.len(), 1, "expected exactly one function argument");
+
+    let (add_left, add_right) = match &hir.arenas.expressions.get(args[0]).kind {
+        ExprKind::Binary { op, left, right } => {
+            assert_eq!(*op, BinaryOp::Add);
+            (*left, *right)
+        }
+        other => panic!("expected top-level Add, got {other:?}"),
+    };
+
+    match &hir.arenas.expressions.get(add_left).kind {
+        ExprKind::Literal(_) => {}
+        other => panic!("expected literal 1 as left operand of Add, got {other:?}"),
+    }
+
+    match &hir.arenas.expressions.get(add_right).kind {
+        ExprKind::Binary { op, .. } => assert_eq!(*op, BinaryOp::Multiply),
+        other => panic!("expected Multiply as right operand of Add, got {other:?}"),
+    }
+}
+
+#[test]
+fn function_call_two_binary_arguments_each_lowers_as_one_arg() {
+    let hir = analyze("RETURN round(3.0 * 4.0, 1 + 2) AS r").unwrap();
+    let expr_kind = find_first_project_expression(&hir);
+
+    let args = match expr_kind {
+        ExprKind::FunctionCall { args, .. } => args,
+        other => panic!("expected FunctionCall, got {other:?}"),
+    };
+
+    assert_eq!(args.len(), 2, "expected exactly two function arguments");
+
+    match &hir.arenas.expressions.get(args[0]).kind {
+        ExprKind::Binary { op, .. } => assert_eq!(*op, BinaryOp::Multiply),
+        other => panic!("expected binary multiply for arg 0, got {other:?}"),
+    }
+    match &hir.arenas.expressions.get(args[1]).kind {
+        ExprKind::Binary { op, .. } => assert_eq!(*op, BinaryOp::Add),
+        other => panic!("expected binary add for arg 1, got {other:?}"),
+    }
 }
 
 // ── Query-time variable substitution ─────────────────────────────────────────

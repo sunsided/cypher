@@ -15,6 +15,12 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Id(pub usize);
 
+impl From<Id> for usize {
+    fn from(id: Id) -> usize {
+        id.0
+    }
+}
+
 /// Arena index for a [`crate::hir::binding::Scope`].
 pub type ScopeId = Id;
 /// Arena index for a [`crate::hir::binding::Binding`].
@@ -109,6 +115,7 @@ impl<T> Default for Arena<T> {
 /// same ID, deduplicating storage.
 pub struct Interner<T: Copy + Clone> {
     map: HashMap<String, T>,
+    display: HashMap<usize, String>,
     next: usize,
 }
 
@@ -116,6 +123,7 @@ impl<T: Copy + Clone> Clone for Interner<T> {
     fn clone(&self) -> Self {
         Self {
             map: self.map.clone(),
+            display: self.display.clone(),
             next: self.next,
         }
     }
@@ -134,6 +142,7 @@ impl<T: Copy + Clone> Interner<T> {
     pub fn new() -> Self {
         Self {
             map: HashMap::new(),
+            display: HashMap::new(),
             next: 0,
         }
     }
@@ -153,18 +162,60 @@ impl<T: Copy + Clone> Interner<T> {
         id
     }
 
+    /// Intern using an unambiguous `key` for deduplication while storing a
+    /// separate human-readable `display` string returned by [`Self::name_of`].
+    ///
+    /// Use this when the natural display form is ambiguous as a key (e.g.
+    /// function names whose segments may contain dots).
+    pub fn intern_with_display(
+        &mut self,
+        key: &str,
+        display: &str,
+        mk: impl FnOnce(usize) -> T,
+    ) -> T
+    where
+        T: Into<usize>,
+    {
+        if let Some(&id) = self.map.get(key) {
+            #[cfg(debug_assertions)]
+            {
+                let idx: usize = id.into();
+                if let Some(stored) = self.display.get(&idx) {
+                    debug_assert_eq!(
+                        stored.as_str(),
+                        display,
+                        "intern_with_display: same key \"{key}\" re-interned with different display"
+                    );
+                }
+            }
+            return id;
+        }
+        let idx = self.next;
+        let id = mk(idx);
+        self.next += 1;
+        self.map.insert(key.to_string(), id);
+        self.display.insert(id.into(), display.to_string());
+        id
+    }
+
     /// Look up `name`, returning its ID if already interned.
     pub fn resolve(&self, name: &str) -> Option<T> {
         self.map.get(name).copied()
     }
 
-    /// Reverse-lookup: find the name for the given `id`.
+    /// Reverse-lookup: find the display name for the given `id`.
     ///
-    /// This is a linear scan and intended for debugging only.
+    /// For entries created via [`Self::intern_with_display`] this returns the
+    /// display string. For entries created via [`Self::intern`] this falls back
+    /// to a linear scan of the key map (intended for debugging only).
     pub fn name_of(&self, id: T) -> Option<&str>
     where
-        T: PartialEq,
+        T: Into<usize> + PartialEq,
     {
+        let idx: usize = id.into();
+        if let Some(s) = self.display.get(&idx) {
+            return Some(s.as_str());
+        }
         self.map
             .iter()
             .find(|(_, v)| **v == id)

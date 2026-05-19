@@ -1,15 +1,15 @@
-use cypher::ast::ToCypher;
+use decypher::ast::ToCypher;
 
 fn main() {
     let code = "MATCH (n:Person) WHERE n.age > 18 RETURN n.name;";
 
     // ── CST (lossless rowan tree) ──────────────────────────────────────
-    let parse = cypher::cst::parse(code);
+    let parse = decypher::cst::parse(code);
     println!("=== CST (Concrete Syntax Tree) ===");
     print_tree(&parse.tree, 0);
 
     // ── AST ────────────────────────────────────────────────────────────
-    match cypher::parse(code) {
+    match decypher::parse(code) {
         Ok(query) => {
             println!("\n=== AST (Abstract Syntax Tree) ===");
             println!("{:#?}", query);
@@ -22,7 +22,7 @@ fn main() {
 }
 
 /// Print a rowan syntax node as an indented tree, skipping trivia.
-fn print_tree(node: &cypher::syntax::SyntaxNode, depth: usize) {
+fn print_tree(node: &decypher::syntax::SyntaxNode, depth: usize) {
     let indent = "  ".repeat(depth);
     println!("{}{:?}", indent, node);
 
@@ -39,9 +39,9 @@ fn print_tree(node: &cypher::syntax::SyntaxNode, depth: usize) {
     }
 }
 
-fn is_trivia(kind: cypher::syntax::SyntaxKind) -> bool {
+fn is_trivia(kind: decypher::syntax::SyntaxKind) -> bool {
     matches!(
         kind,
-        cypher::syntax::SyntaxKind::WHITESPACE | cypher::syntax::SyntaxKind::COMMENT
+        decypher::syntax::SyntaxKind::WHITESPACE | decypher::syntax::SyntaxKind::COMMENT
     )
 }

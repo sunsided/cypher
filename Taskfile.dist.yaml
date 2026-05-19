@@ -50,6 +50,7 @@ tasks:
       - clippy
     cmds:
       - "{{.CARGO}} clippy --fix --allow-dirty --all-features --all-targets"
+      - task: fmt
 
   build:
     desc: Build the crate with default features

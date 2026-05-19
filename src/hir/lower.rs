@@ -15,8 +15,8 @@ use crate::ast::clause::{
     SetItem, SetOperator, Unwind, With,
 };
 use crate::ast::expr::{
-    BinaryOperator, ComparisonOperator, ExistsInner, Expression, Literal, MapProjectionItem,
-    NumberLiteral, UnaryOperator,
+    BinaryOperator, ComparisonOperator, ExistsInner, Expression, FunctionInvocation, Literal,
+    MapProjectionItem, NumberLiteral, UnaryOperator,
 };
 use crate::ast::names::Variable;
 use crate::ast::pattern::{
@@ -32,6 +32,7 @@ use crate::error::{Diagnostics, Span};
 
 use super::arena::{BindingId, ExprId, Id, LabelId, PropertyKeyId, RelTypeId, ScopeId};
 use super::binding::{Binding, BindingKind, Scope};
+use super::config::LowerConfig;
 use super::expr::{
     BinaryOp, CaseAlternative as HirCaseAlternative, CaseExpr as HirCaseExpr, CollectSubquery,
     CollectionQuantifier, ComparisonOperator as HirComparisonOperator, CountSubquery,
@@ -62,8 +63,8 @@ use super::{HirArenas, HirDiagnostic, HirQuery, QueryPart};
 ///
 /// Returns [`crate::error::Diagnostics`] on scope resolution or pattern
 /// normalisation failures.
-pub fn lower(query: &Query) -> Result<HirQuery, Diagnostics> {
-    let mut ctx = LoweringContext::new();
+pub fn lower(query: &Query, config: &LowerConfig) -> Result<HirQuery, Diagnostics> {
+    let mut ctx = LoweringContext::new(config);
     let mut parts = Vec::new();
 
     for stmt in &query.statements {
@@ -95,11 +96,12 @@ pub fn lower(query: &Query) -> Result<HirQuery, Diagnostics> {
 /// Holds the growing [`HirArenas`], the list of emitted diagnostics, the
 /// scope stack, and the buffer of operations being built for the current
 /// query part.
-struct LoweringContext {
+struct LoweringContext<'cfg> {
     arenas: HirArenas,
     diagnostics: Vec<HirDiagnostic>,
     scope_stack: LoweringScopeStack,
     current_part_ops: Vec<Operation>,
+    config: &'cfg LowerConfig,
 }
 
 /// Tracks variable bindings in a stack of scope frames during lowering.
@@ -188,14 +190,15 @@ impl LoweringScopeStack {
     }
 }
 
-impl LoweringContext {
+impl<'cfg> LoweringContext<'cfg> {
     /// Create a fresh lowering context with empty arenas and scope stack.
-    fn new() -> Self {
+    fn new(config: &'cfg LowerConfig) -> Self {
         Self {
             arenas: HirArenas::new(),
             diagnostics: Vec::new(),
             scope_stack: LoweringScopeStack::new(),
             current_part_ops: Vec::new(),
+            config,
         }
     }
 
@@ -423,7 +426,7 @@ impl LoweringContext {
             statements: vec![QueryBody::Regular(c.query.clone())],
             span: Span::new(0, 0),
         };
-        let query = lower(&query_ast).unwrap_or_else(|_| HirQuery {
+        let query = lower(&query_ast, self.config).unwrap_or_else(|_| HirQuery {
             arenas: HirArenas::new(),
             parts: Vec::new(),
             diagnostics: Vec::new(),
@@ -695,8 +698,12 @@ impl LoweringContext {
                 if self.has_aggregate(&pi.expression) {
                     let (func_id, args, distinct) = match &pi.expression {
                         Expression::FunctionCall(fc) => {
-                            let name = fc.name.last().map(|s| s.name.clone()).unwrap_or_default();
-                            let fid = self.arenas.functions.intern(&name, Id);
+                            let key = Self::qualified_function_key(fc);
+                            let display = Self::qualified_function_name(fc);
+                            let fid = self
+                                .arenas
+                                .functions
+                                .intern_with_display(&key, &display, Id);
                             let a = fc.arguments.iter().map(|a| self.lower_expr(a)).collect();
                             (fid, a, fc.distinct)
                         }
@@ -855,9 +862,12 @@ impl LoweringContext {
                     if self.has_aggregate(&pi.expression) {
                         let (func_id, args, distinct) = match &pi.expression {
                             Expression::FunctionCall(fc) => {
-                                let name =
-                                    fc.name.last().map(|s| s.name.clone()).unwrap_or_default();
-                                let fid = self.arenas.functions.intern(&name, Id);
+                                let key = Self::qualified_function_key(fc);
+                                let display = Self::qualified_function_name(fc);
+                                let fid = self
+                                    .arenas
+                                    .functions
+                                    .intern_with_display(&key, &display, Id);
                                 let a = fc.arguments.iter().map(|a| self.lower_expr(a)).collect();
                                 (fid, a, fc.distinct)
                             }
@@ -972,14 +982,24 @@ impl LoweringContext {
     }
 
     fn lower_procedure_invocation(&mut self, proc: &ProcedureInvocation) -> CallProcedureOp {
-        let name = proc
+        let key = proc
             .name
             .name
             .iter()
-            .map(|s| s.name.clone())
+            .map(|s| s.name.replace('\x00', "\x00\x00"))
+            .collect::<Vec<_>>()
+            .join("\x00");
+        let display = proc
+            .name
+            .name
+            .iter()
+            .map(|s| s.name.as_str())
             .collect::<Vec<_>>()
             .join(".");
-        let procedure = self.arenas.functions.intern(&name, Id);
+        let procedure = self
+            .arenas
+            .functions
+            .intern_with_display(&key, &display, Id);
         let args = proc
             .name
             .arguments
@@ -997,7 +1017,25 @@ impl LoweringContext {
 
     fn lower_expr(&mut self, expr: &Expression) -> ExprId {
         let kind = match expr {
-            Expression::Literal(lit) => ExprKind::Literal(self.lower_literal(lit)),
+            Expression::Literal(lit) => match lit {
+                Literal::List(l) => {
+                    let elements = l.elements.iter().map(|e| self.lower_expr(e)).collect();
+                    ExprKind::List(elements)
+                }
+                Literal::Map(m) => {
+                    let entries = m
+                        .entries
+                        .iter()
+                        .map(|(key, val)| {
+                            let property_key = self.arenas.property_keys.intern(&key.name.name, Id);
+                            let expr_id = self.lower_expr(val);
+                            (property_key, expr_id)
+                        })
+                        .collect();
+                    ExprKind::Map(entries)
+                }
+                _ => ExprKind::Literal(self.lower_literal(lit)),
+            },
             Expression::Variable(v) => match self.scope_stack.resolve(&v.name.name) {
                 Some(binding_id) => ExprKind::Binding(binding_id),
                 None => {
@@ -1103,8 +1141,12 @@ impl LoweringContext {
                 }
             }
             Expression::FunctionCall(fc) => {
-                let name = fc.name.last().map(|s| s.name.clone()).unwrap_or_default();
-                let func_id = self.arenas.functions.intern(&name, Id);
+                let key = Self::qualified_function_key(fc);
+                let display = Self::qualified_function_name(fc);
+                let func_id = self
+                    .arenas
+                    .functions
+                    .intern_with_display(&key, &display, Id);
                 let args = fc.arguments.iter().map(|a| self.lower_expr(a)).collect();
                 ExprKind::FunctionCall {
                     function: func_id,
@@ -1253,15 +1295,10 @@ impl LoweringContext {
             Literal::String(s) => HirLiteral::String(s.value.clone()),
             Literal::Boolean(b) => HirLiteral::Boolean(*b),
             Literal::Null => HirLiteral::Null,
-            Literal::List(l) => {
-                let _elements: Vec<ExprId> =
-                    l.elements.iter().map(|e| self.lower_expr(e)).collect();
-                // We represent list literals as ExprKind::List, but HirLiteral only has scalar kinds.
-                // Build it as a list expression instead.
-                HirLiteral::Null // placeholder - the caller should handle lists specially
-            }
-            Literal::Map(_m) => {
-                HirLiteral::Null // placeholder
+            Literal::List(_) | Literal::Map(_) => {
+                unreachable!(
+                    "list/map literals are intercepted in lower_expr before lower_literal is called"
+                )
             }
         }
     }
@@ -1342,7 +1379,7 @@ impl LoweringContext {
                     statements: vec![QueryBody::Regular((**rq).clone())],
                     span: Span::new(0, 0),
                 };
-                let query = lower(&query_ast).unwrap_or_else(|_| HirQuery {
+                let query = lower(&query_ast, self.config).unwrap_or_else(|_| HirQuery {
                     arenas: HirArenas::new(),
                     parts: Vec::new(),
                     diagnostics: Vec::new(),
@@ -1367,7 +1404,7 @@ impl LoweringContext {
             statements: vec![QueryBody::Regular(query.clone())],
             span: Span::new(0, 0),
         };
-        let q = lower(&query_ast).unwrap_or_else(|_| HirQuery {
+        let q = lower(&query_ast, self.config).unwrap_or_else(|_| HirQuery {
             arenas: HirArenas::new(),
             parts: Vec::new(),
             diagnostics: Vec::new(),
@@ -1390,7 +1427,7 @@ impl LoweringContext {
             statements: vec![QueryBody::Regular(query.clone())],
             span: Span::new(0, 0),
         };
-        let q = lower(&query_ast).unwrap_or_else(|_| HirQuery {
+        let q = lower(&query_ast, self.config).unwrap_or_else(|_| HirQuery {
             arenas: HirArenas::new(),
             parts: Vec::new(),
             diagnostics: Vec::new(),
@@ -1682,15 +1719,37 @@ impl LoweringContext {
         self.resolve_or_bind_variable(var)
     }
 
+    fn qualified_function_name(fc: &FunctionInvocation) -> String {
+        let mut name = String::new();
+        for (idx, segment) in fc.name.iter().enumerate() {
+            if idx > 0 {
+                name.push('.');
+            }
+            name.push_str(&segment.name);
+        }
+        name
+    }
+
+    fn qualified_function_key(fc: &FunctionInvocation) -> String {
+        fc.name
+            .iter()
+            .map(|s| s.name.replace('\x00', "\x00\x00"))
+            .collect::<Vec<_>>()
+            .join("\x00")
+    }
+
     fn infer_alias_name(&self, expr: &Expression) -> String {
         match expr {
             Expression::Variable(v) => v.name.name.clone(),
             Expression::PropertyLookup { property, .. } => property.name.name.clone(),
-            Expression::FunctionCall(fc) => fc
-                .name
-                .last()
-                .map(|s| s.name.clone())
-                .unwrap_or_else(|| "expr".to_string()),
+            Expression::FunctionCall(fc) => {
+                let name = Self::qualified_function_name(fc);
+                if name.is_empty() {
+                    "expr".to_string()
+                } else {
+                    name
+                }
+            }
             _ => "expr".to_string(),
         }
     }
@@ -1698,26 +1757,8 @@ impl LoweringContext {
     fn has_aggregate(&self, expr: &Expression) -> bool {
         match expr {
             Expression::FunctionCall(fc) => {
-                let name = fc
-                    .name
-                    .last()
-                    .map(|s| s.name.to_uppercase())
-                    .unwrap_or_default();
-                matches!(
-                    name.as_str(),
-                    "COUNT"
-                        | "SUM"
-                        | "AVG"
-                        | "MIN"
-                        | "MAX"
-                        | "COLLECT"
-                        | "PERCENTILE_CONT"
-                        | "PERCENTILE_DISC"
-                        | "STDEV"
-                        | "STDEVP"
-                        | "VAR"
-                        | "VARP"
-                )
+                let name = Self::qualified_function_name(fc);
+                self.config.aggregates.contains(&name)
             }
             Expression::CountStar { .. } => true,
             Expression::BinaryOp { lhs, rhs, .. } => {
@@ -1788,12 +1829,13 @@ fn expr_span(expr: &Expression) -> Span {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hir::LowerConfig;
     use crate::parse;
 
     #[test]
     fn test_simple_match_return() {
         let query = parse("MATCH (p:Person) RETURN p.name").unwrap();
-        let hir = lower(&query).unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
         assert_eq!(hir.parts.len(), 1);
         let ops = &hir.parts[0].operations;
         assert!(matches!(&ops[0], Operation::Match(_)));
@@ -1804,7 +1846,7 @@ mod tests {
     #[test]
     fn test_with_aggregation() {
         let query = parse("MATCH (p:Person) WITH count(*) AS n RETURN n").unwrap();
-        let hir = lower(&query).unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
         // WITH creates a new query part, so we get 2 parts
         assert_eq!(hir.parts.len(), 2);
         let ops = &hir.parts[0].operations;
@@ -1815,21 +1857,21 @@ mod tests {
     #[test]
     fn test_multi_part_query() {
         let query = parse("MATCH (p:Person) WITH p MATCH (p)-[:KNOWS]->(f) RETURN f.name").unwrap();
-        let hir = lower(&query).unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
         assert_eq!(hir.parts.len(), 2);
     }
 
     #[test]
     fn test_unknown_variable_error() {
         let query = parse("MATCH (p:Person) RETURN x.name").unwrap();
-        let result = lower(&query);
+        let result = lower(&query, &LowerConfig::default());
         assert!(result.is_err());
     }
 
     #[test]
     fn test_where_after_match() {
         let query = parse("MATCH (p:Person) WHERE p.age > 18 RETURN p.name").unwrap();
-        let hir = lower(&query).unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
         let ops = &hir.parts[0].operations;
         match &ops[0] {
             Operation::Match(m) => {
@@ -1842,7 +1884,7 @@ mod tests {
     #[test]
     fn test_where_after_with() {
         let query = parse("MATCH (p:Person) WITH p WHERE p.age > 18 RETURN p.name").unwrap();
-        let hir = lower(&query).unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
         let ops = &hir.parts[0].operations;
         assert!(matches!(&ops[0], Operation::Match(_)));
         assert!(matches!(&ops[1], Operation::Project(_)));
@@ -1852,7 +1894,7 @@ mod tests {
     #[test]
     fn test_optional_match() {
         let query = parse("OPTIONAL MATCH (p:Person) RETURN p.name").unwrap();
-        let hir = lower(&query).unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
         let ops = &hir.parts[0].operations;
         assert!(matches!(&ops[0], Operation::OptionalMatch(_)));
     }
@@ -1860,7 +1902,7 @@ mod tests {
     #[test]
     fn test_create_clause() {
         let query = parse("CREATE (p:Person {name: 'Alice'})").unwrap();
-        let hir = lower(&query).unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
         let ops = &hir.parts[0].operations;
         assert!(matches!(&ops[0], Operation::Create(_)));
     }
@@ -1868,7 +1910,7 @@ mod tests {
     #[test]
     fn test_delete_clause() {
         let query = parse("MATCH (p:Person) DELETE p").unwrap();
-        let hir = lower(&query).unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
         let ops = &hir.parts[0].operations;
         assert!(matches!(&ops[0], Operation::Match(_)));
         assert!(matches!(&ops[1], Operation::Delete(_)));
@@ -1877,7 +1919,7 @@ mod tests {
     #[test]
     fn test_unwind_clause() {
         let query = parse("UNWIND [1, 2, 3] AS x RETURN x").unwrap();
-        let hir = lower(&query).unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
         let ops = &hir.parts[0].operations;
         assert!(matches!(&ops[0], Operation::Unwind(_)));
     }
@@ -1885,7 +1927,7 @@ mod tests {
     #[test]
     fn test_return_star() {
         let query = parse("MATCH (p:Person) RETURN *").unwrap();
-        let hir = lower(&query).unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
         let ops = &hir.parts[0].operations;
         assert!(matches!(&ops[0], Operation::Match(_)));
         assert!(matches!(&ops[1], Operation::Project(_)));
@@ -1894,12 +1936,144 @@ mod tests {
     #[test]
     fn test_order_by_and_limit() {
         let query = parse("MATCH (p:Person) RETURN p.name ORDER BY p.name ASC LIMIT 10").unwrap();
-        let hir = lower(&query).unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
         let ops = &hir.parts[0].operations;
         assert!(matches!(&ops[0], Operation::Match(_)));
         assert!(matches!(&ops[1], Operation::Project(_)));
         assert!(matches!(&ops[2], Operation::Sort(_)));
         assert!(matches!(&ops[3], Operation::Limit(_)));
         assert!(matches!(&ops[4], Operation::Return(_)));
+    }
+
+    #[test]
+    fn test_function_call_preserves_qualified_name() {
+        let query = parse("RETURN apoc.text.distance('hello', 'world') AS d").unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
+        let ops = &hir.parts[0].operations;
+
+        let function = match &ops[0] {
+            Operation::Project(ProjectOp { items, .. }) => {
+                match &hir.arenas.expressions.get(items[0].expression).kind {
+                    ExprKind::FunctionCall { function, .. } => *function,
+                    _ => panic!("Expected function call expression"),
+                }
+            }
+            _ => panic!("Expected ProjectOp"),
+        };
+
+        assert_eq!(
+            hir.arenas.functions.name_of(function),
+            Some("apoc.text.distance")
+        );
+    }
+
+    #[test]
+    fn test_infer_alias_name_uses_full_qualified_name() {
+        let query = parse("RETURN apoc.text.distance('hello', 'world')").unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
+        let ops = &hir.parts[0].operations;
+
+        let alias_id = match &ops[0] {
+            Operation::Project(ProjectOp { items, .. }) => items[0].alias,
+            _ => panic!("Expected ProjectOp"),
+        };
+
+        assert_eq!(hir.arenas.bindings.get(alias_id).name, "apoc.text.distance");
+    }
+
+    #[test]
+    fn test_qualified_function_name_does_not_collide_with_builtin() {
+        let query = parse(
+            "RETURN replace('hello', 'l', 'x') AS a, apoc.text.replace('hello', 'l', 'x') AS b",
+        )
+        .unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
+        let ops = &hir.parts[0].operations;
+
+        let (builtin, qualified) = match &ops[0] {
+            Operation::Project(ProjectOp { items, .. }) => {
+                let builtin = match &hir.arenas.expressions.get(items[0].expression).kind {
+                    ExprKind::FunctionCall { function, .. } => *function,
+                    _ => panic!("Expected first expression to be a function call"),
+                };
+                let qualified = match &hir.arenas.expressions.get(items[1].expression).kind {
+                    ExprKind::FunctionCall { function, .. } => *function,
+                    _ => panic!("Expected second expression to be a function call"),
+                };
+                (builtin, qualified)
+            }
+            _ => panic!("Expected ProjectOp"),
+        };
+
+        assert_ne!(builtin, qualified);
+        assert_eq!(hir.arenas.functions.name_of(builtin), Some("replace"));
+        assert_eq!(
+            hir.arenas.functions.name_of(qualified),
+            Some("apoc.text.replace")
+        );
+    }
+
+    #[test]
+    fn test_namespaced_count_is_not_aggregate() {
+        // apoc.coll.count has "count" as its last segment but is NOT in the default
+        // aggregate registry. It must lower to ProjectOp, not AggregateOp.
+        let query = parse("MATCH (n) WITH apoc.coll.count(n.name) AS c RETURN c").unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
+        assert_eq!(hir.parts.len(), 2);
+        let ops = &hir.parts[0].operations;
+        assert!(
+            matches!(&ops[1], Operation::Project(_)),
+            "expected ProjectOp but got: {:?}",
+            &ops[1]
+        );
+    }
+
+    #[test]
+    fn test_custom_registered_aggregate() {
+        // A custom qualified aggregate registered in LowerConfig must be routed
+        // to AggregateOp, not ProjectOp.
+        let mut config = LowerConfig::default();
+        config.aggregates.register("apoc.agg.percentiles");
+
+        let query = parse("MATCH (n) WITH apoc.agg.percentiles(n.value) AS p RETURN p").unwrap();
+        let hir = lower(&query, &config).unwrap();
+        assert_eq!(hir.parts.len(), 2);
+        let ops = &hir.parts[0].operations;
+        assert!(
+            matches!(&ops[1], Operation::Aggregate(_)),
+            "expected AggregateOp but got: {:?}",
+            &ops[1]
+        );
+    }
+
+    #[test]
+    fn test_escaped_segment_does_not_collide_with_dotted_namespace() {
+        // `apoc.text`.distance has 2 segments: ["apoc.text", "distance"]
+        // apoc.text.distance has 3 segments: ["apoc", "text", "distance"]
+        // They must produce distinct FunctionIds.
+        let query =
+            parse("RETURN `apoc.text`.distance('a', 'b'), apoc.text.distance('a', 'b')").unwrap();
+        let hir = lower(&query, &LowerConfig::default()).unwrap();
+        let ops = &hir.parts[0].operations;
+
+        let (escaped_id, plain_id) = match &ops[0] {
+            Operation::Project(ProjectOp { items, .. }) => {
+                let escaped = match &hir.arenas.expressions.get(items[0].expression).kind {
+                    ExprKind::FunctionCall { function, .. } => *function,
+                    _ => panic!("Expected FunctionCall for item 0"),
+                };
+                let plain = match &hir.arenas.expressions.get(items[1].expression).kind {
+                    ExprKind::FunctionCall { function, .. } => *function,
+                    _ => panic!("Expected FunctionCall for item 1"),
+                };
+                (escaped, plain)
+            }
+            _ => panic!("Expected ProjectOp"),
+        };
+
+        assert_ne!(
+            escaped_id, plain_id,
+            "`apoc.text`.distance and apoc.text.distance must have distinct FunctionIds"
+        );
     }
 }

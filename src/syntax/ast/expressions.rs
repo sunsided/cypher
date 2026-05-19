@@ -666,15 +666,42 @@ impl FunctionInvocation {
     }
 
     pub fn arguments(&self) -> impl Iterator<Item = Expression> {
-        self.0
-            .children()
-            .filter(|n| {
-                !matches!(
-                    n.kind(),
+        let mut args = Vec::new();
+        let mut current = None;
+
+        for child in self.0.children_with_tokens() {
+            if child
+                .as_token()
+                .is_some_and(|t| t.kind() == SyntaxKind::COMMA)
+            {
+                if let Some(expr) = current.take() {
+                    args.push(expr);
+                }
+                continue;
+            }
+
+            if let Some(node) = child.as_node() {
+                if matches!(
+                    node.kind(),
                     SyntaxKind::FUNCTION_NAME | SyntaxKind::NAMESPACE | SyntaxKind::VARIABLE
-                )
-            })
-            .filter_map(Expression::cast)
+                ) {
+                    continue;
+                }
+                if let Some(expr) = Expression::cast(node.clone()) {
+                    // The flat CST can expose a binary chain as multiple sibling
+                    // expression nodes (e.g. `a`, then `a*b`, then `(a*b)/c`).
+                    // Keep the latest expression in each comma-delimited segment
+                    // so each argument is the final composed expression.
+                    current = Some(expr);
+                }
+            }
+        }
+
+        if let Some(expr) = current {
+            args.push(expr);
+        }
+
+        args.into_iter()
     }
 
     pub fn distinct_token(&self) -> Option<SyntaxToken> {
